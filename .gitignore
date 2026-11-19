@@ -6,3 +6,4 @@ vendor/
 .DS_Store
 .swiftpm/
 __pycache__/
+Resources/AppIcon.icns

@@ -38,7 +38,18 @@ APP="build/${NAME}.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "build/$NAME" "$APP/Contents/MacOS/$NAME"
 ditto "$SPARKLE_DIR/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
-if [ -f Resources/AppIcon.icns ]; then cp Resources/AppIcon.icns "$APP/Contents/Resources/"; fi
+# 应用图标：由 design/AppIcon-1024.png 现场生成 AppIcon.icns（S6：Sparkle 弹窗与 Finder 显示）
+ICON_SRC="design/AppIcon-1024.png"
+[ -f "$ICON_SRC" ] || { echo "::error::缺少 $ICON_SRC"; exit 1; }
+ICONSET="build/AppIcon.iconset"
+mkdir -p "$ICONSET"
+for s in 16 32 128 256 512; do
+  sips -z "$s" "$s" "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
+  sips -z "$((s*2))" "$((s*2))" "$ICON_SRC" --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+done
+mkdir -p Resources
+iconutil -c icns "$ICONSET" -o Resources/AppIcon.icns
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

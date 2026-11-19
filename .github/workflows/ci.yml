@@ -67,6 +67,9 @@ jobs:
           otool -L "$bin" | grep -q "@rpath/Sparkle.framework"
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist" | grep -qx "$VERSION"
           /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$app/Contents/Info.plist"
+          test -s "$app/Contents/Resources/AppIcon.icns"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIconFile" "$app/Contents/Info.plist" | grep -qx "AppIcon"
+          echo "RELEASE: icon=AppIcon.icns $(stat -f%z "$app/Contents/Resources/AppIcon.icns")B"
           echo "RELEASE: codesign=adhoc version=$VERSION"
 
       - name: Smoke test (arm64 native + x86_64 Rosetta)
