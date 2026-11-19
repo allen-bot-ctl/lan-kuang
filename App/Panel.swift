@@ -456,10 +456,12 @@ struct SettingsCard: View {
     @ObservedObject var model: PanelModel
     var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                CapsuleButton(action: { model.showSettings = false }) { Text("‹ 返回") }
-                Text("设置").font(.system(size: 13, weight: .semibold))
-                Spacer()
+            ZStack {
+                Text("设置").font(.system(size: 13, weight: .semibold))   // 按整张卡宽度居中（契约 17dcf41）
+                HStack {
+                    CapsuleButton(action: { model.showSettings = false }) { Text("‹ 返回") }
+                    Spacer()
+                }
             }
             .frame(height: CardLayout.headerHeight)
             ScrollView(.vertical, showsIndicators: true) {
