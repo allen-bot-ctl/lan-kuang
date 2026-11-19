@@ -287,3 +287,43 @@ final class StickyWidthTests: XCTestCase {
         XCTAssertEqual(s.update(actual: 12, minimum: 16, now: 24), 16)   // 稳定 10 秒，缩回但不低于 99K 的宽度
     }
 }
+
+final class CardsTests: XCTestCase {
+    func testCardCount() {
+        XCTAssertEqual(cardIDs(hasBattery: true).count, 6)
+        XCTAssertEqual(cardIDs(hasBattery: false).count, 5)
+        XCTAssertEqual(cardIDs(hasBattery: true).first, "overview")
+    }
+    func testHistoryCap() {
+        var h = History<Int>()
+        for i in 0..<300 { h.append(i) }
+        XCTAssertEqual(h.count, 120)
+        XCTAssertEqual(h.values.first, 180)
+        XCTAssertEqual(h.values.last, 299)
+    }
+    func testCPUSplit() {
+        let s = cpuSplit(previous: CPUTicks(user: 0, system: 0, idle: 0, nice: 0), current: CPUTicks(user: 30, system: 10, idle: 50, nice: 10))
+        XCTAssertEqual(s.user, 40, accuracy: 1e-9); XCTAssertEqual(s.system, 10, accuracy: 1e-9); XCTAssertEqual(s.idle, 50, accuracy: 1e-9)
+    }
+    func testTrackpadOnePagePerGesture() {
+        var p = CardPager(count: 6)
+        p.scroll(dx: 8, dy: 0, phase: .began, now: 0)
+        p.scroll(dx: 15, dy: 0, phase: .changed, now: 0.01)
+        p.scroll(dx: 80, dy: 0, phase: .changed, now: 0.02)
+        p.scroll(dx: 40, dy: 0, phase: .momentum, now: 0.03)
+        XCTAssertEqual(p.index, 1)
+        p.scroll(dx: 0, dy: 0, phase: .ended, now: 0.1)
+        p.scroll(dx: -30, dy: 0, phase: .began, now: 0.2)
+        XCTAssertEqual(p.index, 0)
+    }
+    func testWheelCooldownAndBounds() {
+        var p = CardPager(count: 5)
+        XCTAssertFalse(p.scroll(dx: 0, dy: -3, phase: .none, now: 0))   // 第一张往前：不动
+        XCTAssertTrue(p.scroll(dx: 0, dy: 3, phase: .none, now: 1))
+        XCTAssertFalse(p.scroll(dx: 0, dy: 3, phase: .none, now: 1.1))  // 冷却中
+        for i in 0..<10 { p.scroll(dx: 0, dy: 3, phase: .none, now: 2 + Double(i)) }
+        XCTAssertEqual(p.index, 4)                                       // 到头就停，不循环
+        p.setCount(4); XCTAssertEqual(p.index, 3)
+        p.reset(); XCTAssertEqual(p.index, 0)
+    }
+}

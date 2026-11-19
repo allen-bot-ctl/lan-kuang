@@ -66,5 +66,19 @@ shoot "-longest" --debug-open-panel --debug-longest --debug-battery=ac,100
 for st in ac,100 charging,18 battery,62 battery,15 none; do
   shoot "-bat-${st%%,*}-${st#*,}" --debug-open-panel --debug-battery="$st"
 done
+# v0.1.12 M2：每张卡片深浅各一套 2x 截图（模拟充电中 62% 以出电池卡）
+for ap in dark light; do
+  for pg in 0 1 2 3 4 5; do
+    shoot "-card$pg-$ap" --debug-open-panel --debug-page=$pg --debug-appearance=$ap --debug-battery=charging,62
+  done
+done
+# v0.1.12 M1：合成滚动事件翻页（有电池 6 张、没电池 5 张）
+for st in charging,62 none; do
+  log="/tmp/scroll-${st%%,*}.log"
+  "$bin" --debug-open-panel --debug-scroll-test --debug-battery="$st" >"$log" 2>&1 &
+  pid=$!; sleep 22; kill -TERM "$pid" 2>/dev/null || true; sleep 1; kill -KILL "$pid" 2>/dev/null || true
+  grep "^DEBUG_SCROLL" "$log" || { cat "$log"; echo "::error::翻页测试没有输出"; exit 1; }
+  grep -q "^DEBUG_SCROLL .* ok=true" "$log" || { echo "::error::翻页测试失败"; exit 1; }
+done
 grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
 ls -l shots

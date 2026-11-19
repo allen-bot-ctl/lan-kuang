@@ -31,6 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var gate = RefreshGate()
     private var prevTicks: CPUTicks?
     private var panelPrevTicks: CPUTicks?
+    // v0.1.12：跟菜单栏同一节奏（2 秒）攒历史，面板没打开也在攒；只在面板可见时推给视图。
+    private var cpuHistory = History<CPUSplit>()
+    private var memHistory = History<Double>()
+    private let debugPage = CommandLine.arguments.first { $0.hasPrefix("--debug-page=") }
+        .flatMap { Int($0.dropFirst("--debug-page=".count)) }
     private var menuBarTimer: Timer?
     private var batteryTimer: Timer?
     private var panelTimer: Timer?
@@ -45,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // `--debug-appearance=light|dark`：CI 截深浅两套卡片。
+        if let a = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-appearance=") }) {
+            NSApp.appearance = NSAppearance(named: a.hasSuffix("light") ? .aqua : .darkAqua)
+        }
         // `--debug-render-icons=<目录>`：离屏 2x 渲染五种电池状态的菜单栏图像后退出（CI V1）。
         if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-render-icons=") }) {
             let dir = URL(fileURLWithPath: String(arg.dropFirst("--debug-render-icons=".count)))
@@ -114,9 +123,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.model.debugLongest = CommandLine.arguments.contains("--debug-longest")
                 self.debouncer.handle(.click)
                 self.applyHoverState()
+                if let p = self.debugPage { self.panel.resetPage(to: p) }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.printDebugGeometry() }
+                if CommandLine.arguments.contains("--debug-scroll-test") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runScrollTest() }
+                }
             }
         }
+    }
+
+    /// CI：合成真实的滚动事件（CGEvent → NSEvent）发给面板，验证翻页：鼠标滚轮竖滚、触控板横滑（带 phase），到头不越界。
+    private func runScrollTest() {
+        let last = model.cards.count - 1
+        func wheel(_ lines: Int32) -> NSEvent {
+            let c = CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: lines, wheel2: 0, wheel3: 0)!
+            return NSEvent(cgEvent: c)!
+        }
+        func pad(_ dx: Int32, _ phase: Int64) -> NSEvent {
+            let c = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: dx, wheel3: 0)!
+            c.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            c.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase)   // 1 began 2 changed 4 ended
+            return NSEvent(cgEvent: c)!
+        }
+        func swipe(_ dx: Int32) -> [NSEvent] { [pad(dx / 4, 1), pad(dx / 2, 2), pad(dx, 2), pad(dx, 2), pad(0, 4)] }
+        // (事件组, 期望页)。滚轮向下 / 手指向左 = 下一张。
+        let steps: [(String, [NSEvent], Int)] = [
+            ("wheel-up-at-first", [wheel(3)], 0),
+            ("wheel-down", [wheel(-1)], 1),
+            ("wheel-down", [wheel(-1)], 2),
+            ("swipe-left", swipe(-40), 3),
+            ("swipe-right", swipe(40), 2),
+            ("swipe-left", swipe(-40), 3),
+        ] + (0..<8).map { _ in ("wheel-down-past-end", [wheel(-1)], min(last, 99)) }
+          + (0..<8).map { _ in ("wheel-up-to-first", [wheel(1)], 0) }
+        var results: [String] = []
+        var ok = true
+        func run(_ i: Int) {
+            guard i < steps.count else {
+                print("DEBUG_SCROLL cards=\(model.cards.count) " + results.joined(separator: " ") + " ok=\(ok)")
+                fflush(stdout); return
+            }
+            let (name, events, want) = steps[i]
+            for e in events { panel.hostScroll(e) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [self] in
+                let got = model.page
+                // 「到头」的一串只检查最后一步
+                let check = !(name.hasSuffix("past-end") || name.hasSuffix("to-first")) || i == steps.count - 1 || steps[i + 1].0 != name
+                if check && got != want { ok = false }
+                if check { results.append("\(name)=\(got)") }
+                run(i + 1)
+            }
+        }
+        run(0)
     }
 
     // MARK: 菜单
@@ -197,6 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let b = statsItem.button else { return }
         refreshPanel()
         refreshDisk()
+        pushHistory()
+        panel.resetPage()   // 每次打开都从总览开始
         panel.show(below: b)
         startPanelTimers()
     }
@@ -217,8 +277,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshPanel() {
         let t = Sampler.cpuTicks()
-        if let p = panelPrevTicks { model.cpu = cpuPercent(previous: p, current: t) }
-        else if let p = prevTicks { model.cpu = cpuPercent(previous: p, current: t) }
+        if let p = panelPrevTicks ?? prevTicks {
+            model.cpu = cpuPercent(previous: p, current: t)
+            model.cpuSplitNow = cpuSplit(previous: p, current: t)
+        }
         panelPrevTicks = t
         if model.debugLongest {
             model.memUsed = UInt64(128 * Units.gib); model.memTotal = UInt64(128 * Units.gib); model.cpu = 100
@@ -226,6 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         model.memUsed = Sampler.memoryUsedBytes()
         model.memTotal = Sampler.memoryTotalBytes
+        model.memCached = Sampler.memoryCachedBytes()
+        model.swapUsed = Sampler.swapUsedBytes()
     }
 
     private func refreshDisk() {
@@ -271,7 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func refreshStats() {
         let t = Sampler.cpuTicks()
         let cpu = prevTicks.map { cpuPercent(previous: $0, current: t) } ?? 0
+        if let p = prevTicks { cpuHistory.append(cpuSplit(previous: p, current: t)) }
         prevTicks = t
+        let memUsedNow = Sampler.memoryUsedBytes()
+        memHistory.append(Double(percentOf(used: memUsedNow, total: Sampler.memoryTotalBytes)))
+        if panel.isVisible { pushHistory() }
         let nc = Sampler.interfaceCounters(), now = ProcessInfo.processInfo.systemUptime
         if let p = prevNet {
             let r = netRate(previous: p, current: nc, seconds: now - prevNetAt)
@@ -283,10 +351,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             netLines = netWidestLines
             model.net = NetRate(up: 999 * 1024, down: 999 * 1024 * 1024)
         } else {
-            memTitle = formatMemoryTitle(usedBytes: Sampler.memoryUsedBytes())
+            memTitle = formatMemoryTitle(usedBytes: memUsedNow)
             cpuTitle = formatCPUTitle(percent: cpu)
         }
         redrawItem()
+    }
+
+    private func pushHistory() {
+        model.cpuHistory = cpuHistory
+        model.memHistory = memHistory
     }
 
     private func refreshBattery() {
