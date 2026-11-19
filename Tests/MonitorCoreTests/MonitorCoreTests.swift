@@ -187,3 +187,34 @@ final class PanelLayoutTests: XCTestCase {
         XCTAssertEqual(formatUsageRow(used: UInt64(128 * Units.gib), total: UInt64(128 * Units.gib), unit: Units.gib), "128 / 128 G · 100%")
     }
 }
+
+final class SingleItemTests: XCTestCase {
+    // S2：电池状态 → 图形
+    func testGlyphMapping() {
+        XCTAssertEqual(batteryGlyphSpec(BatteryState(percent: 18, isCharging: true, onAC: true))?.overlay, .bolt)
+        XCTAssertEqual(batteryGlyphSpec(BatteryState(percent: 100, isCharging: false, onAC: true))?.overlay, .plug)
+        XCTAssertEqual(batteryGlyphSpec(BatteryState(percent: 20, isCharging: false, onAC: false))?.isLowRed, true)
+        XCTAssertEqual(batteryGlyphSpec(BatteryState(percent: 21, isCharging: false, onAC: false))?.isLowRed, false)
+        XCTAssertNil(batteryGlyphSpec(nil))
+    }
+    // S4：右键菜单状态行
+    func testMenuLine() {
+        XCTAssertEqual(batteryMenuLine(BatteryState(percent: 87, isCharging: true, onAC: true)), "电池 87% · 充电中")
+        XCTAssertEqual(batteryMenuLine(BatteryState(percent: 100, isCharging: false, onAC: true)), "电池 100% · 已接电源")
+        XCTAssertEqual(batteryMenuLine(BatteryState(percent: 42, isCharging: false, onAC: false)), "电池 42% · 使用电池")
+        XCTAssertNil(batteryMenuLine(nil))
+    }
+    func testDebugBattery() {
+        XCTAssertEqual(parseDebugBattery("charging,18"), .some(BatteryState(percent: 18, isCharging: true, onAC: true)))
+        XCTAssertEqual(parseDebugBattery("ac,100"), .some(BatteryState(percent: 100, isCharging: false, onAC: true)))
+        XCTAssertEqual(parseDebugBattery("battery,3"), .some(BatteryState(percent: 3, isCharging: false, onAC: false)))
+        XCTAssertEqual(parseDebugBattery("none"), .some(nil))
+        XCTAssertNil(parseDebugBattery("weird,1"))
+        XCTAssertNil(parseDebugBattery("battery"))
+    }
+    func testWidthBudget() {
+        // 文字列 ≤ 23pt 时带电池总宽 ≤ 52pt
+        XCTAssertLessThanOrEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), StatusItemLayout.maxWidth)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 27)
+    }
+}

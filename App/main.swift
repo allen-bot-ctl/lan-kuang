@@ -6,7 +6,6 @@ import Sparkle
 #endif
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
-    private var batteryItem: NSStatusItem!
     private var statsItem: NSStatusItem!
     private let model = PanelModel()
     private lazy var panel = HoverPanel(model: model)
@@ -14,6 +13,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let debouncer = HoverDebouncer(now: { ProcessInfo.processInfo.systemUptime })
     private let debugOpenPanel = CommandLine.arguments.contains("--debug-open-panel")
     private let debugLongest = CommandLine.arguments.contains("--debug-longest")
+    /// `--debug-battery=<状态,电量>`：CI 无电池时模拟 5 种状态。nil = 不覆盖。
+    private let debugBattery: BatteryState?? = CommandLine.arguments
+        .first { $0.hasPrefix("--debug-battery=") }
+        .flatMap { parseDebugBattery(String($0.dropFirst("--debug-battery=".count))) }
+    private var battery: BatteryState?
+    private var memTitle = "0G"
+    private var cpuTitle = "0%"
+    private let batteryLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let batteryLineSeparator = NSMenuItem.separator()
 
     private var gate = RefreshGate()
     private var prevTicks: CPUTicks?
@@ -33,24 +41,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         let idBase = Bundle.main.bundleIdentifier ?? "app"
-        // 先创建的在右边：电池在右，内存/CPU 在左。
-        batteryItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        batteryItem.autosaveName = idBase + ".battery"
+        // 只有一个菜单栏项；新的 autosaveName，避免与 0.1.0/0.1.1 两项的位置冲突。
         statsItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statsItem.autosaveName = idBase + ".stats"
-
-        let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        for item in [statsItem!, batteryItem!] {
-            guard let b = item.button else { continue }
-            b.font = font
+        statsItem.autosaveName = idBase + ".single"
+        if let b = statsItem.button {
             b.target = self
             b.action = #selector(statusClicked(_:))
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            b.imagePosition = .imageOnly
         }
-        batteryItem.button?.imagePosition = .imageLeading
-        // 左项按最长文案定宽，数字变化时宽度不跳。
-        let widest = (statusTitleWidest as NSString).size(withAttributes: [.font: font]).width
-        statsItem.length = ceil(widest) + 12
 
         if let b = statsItem.button {
             b.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
@@ -85,24 +84,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         loginItem.target = self
         let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? ""
         let quit = NSMenuItem(title: "退出" + displayName, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        contextMenu.items = [update, loginItem, .separator(), quit]
+        batteryLineItem.isEnabled = false
+        contextMenu.autoenablesItems = false
+        contextMenu.items = [batteryLineItem, batteryLineSeparator, update, loginItem, .separator(), quit]
         contextMenu.delegate = self
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        let line = batteryMenuLine(battery)
+        batteryLineItem.title = line ?? ""
+        batteryLineItem.isHidden = line == nil
+        batteryLineSeparator.isHidden = line == nil
     }
 
     @objc private func statusClicked(_ sender: NSStatusBarButton) {
         let isRight = NSApp.currentEvent?.type == .rightMouseUp
             || NSApp.currentEvent?.modifierFlags.contains(.control) == true
-        if isRight || sender === batteryItem.button {
+        if isRight {
             debouncer.forceHide()
             hidePanel()
-            let item = sender === batteryItem.button ? batteryItem! : statsItem!
-            item.menu = contextMenu
+            statsItem.menu = contextMenu
             sender.performClick(nil)
-            item.menu = nil
+            statsItem.menu = nil
         } else {
             debouncer.handle(.click)
             applyHoverState()
@@ -195,6 +199,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let bf = statsItem.button?.window?.frame ?? .zero
         let menubar = NSRect(x: bf.minX - 160, y: bf.minY, width: bf.width + 320, height: bf.height)
         print("DEBUG_SCALE \(scale)")
+        print("DEBUG_ITEM_WIDTH \(statsItem.length) max=\(StatusItemLayout.maxWidth) text=\(StatusRenderer.textColumnWidth)")
+        print("DEBUG_RECT_ITEM " + top(bf.insetBy(dx: -4, dy: 0)))
         print("DEBUG_RECT_MENUBAR " + top(menubar))
         print("DEBUG_RECT_PANEL " + top(panel.frame.insetBy(dx: -8, dy: -8)))
         let f = model.frames
@@ -221,16 +227,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t = Sampler.cpuTicks()
         let cpu = prevTicks.map { cpuPercent(previous: $0, current: t) } ?? 0
         prevTicks = t
-        if debugLongest { statsItem.button?.title = statusTitleWidest; return }   // CI：最长文案定宽检查
-        statsItem.button?.title = formatStatusTitle(memoryUsedBytes: Sampler.memoryUsedBytes(), cpuPercent: cpu)
+        if debugLongest {   // CI：最长文案定宽检查
+            memTitle = StatusItemLayout.widestLines.0; cpuTitle = StatusItemLayout.widestLines.1
+        } else {
+            memTitle = formatMemoryTitle(usedBytes: Sampler.memoryUsedBytes())
+            cpuTitle = formatCPUTitle(percent: cpu)
+        }
+        redrawItem()
     }
 
     private func refreshBattery() {
-        guard let s = Sampler.battery() else { batteryItem.isVisible = false; return }
-        batteryItem.isVisible = true
-        batteryItem.button?.image = BatteryIcon.image(batteryIconSpec(s))
-        batteryItem.button?.title = " " + batteryTitle(s)
-        batteryItem.button?.toolTip = batteryStatusText(s)
+        if let d = debugBattery { battery = d } else { battery = Sampler.battery() }
+        redrawItem()
+    }
+
+    private func redrawItem() {
+        guard let b = statsItem.button else { return }
+        let h = NSStatusBar.system.thickness
+        let img = StatusRenderer.image(battery: batteryGlyphSpec(battery), top: memTitle, bottom: cpuTitle, height: h)
+        statsItem.length = img.size.width
+        b.image = img
+        b.title = ""
+        b.toolTip = batteryMenuLine(battery)
     }
 
     private func resume() {

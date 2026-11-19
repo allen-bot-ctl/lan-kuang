@@ -20,7 +20,7 @@ open build/LanKuang.app      # 真启动冒烟：菜单栏出现「13G 9%」与�
 2. 计算与格式化放 `Sources/MonitorCore`，不得 import Darwin/AppKit/IOKit，保证 Linux 上 `swift test` 可跑；新逻辑先写测试。
 3. 采样只在需要时跑：菜单栏 2 秒；面板打开时 1 秒、关闭即停；磁盘打开时 + 60 秒；电池靠 IOPS 通知 + 60 秒兜底；睡眠/屏幕休眠/锁屏全部暂停。节奏常量只改 `Refresh`。
 4. 菜单栏用等宽数字字体，宽度不能随数字跳动；内存只显示整数加 `G`。
-5. 两个独立 NSStatusItem，都设 `autosaveName`；无电池时隐藏电池项。不加 Dock 图标（LSUIElement）。
+5. 只有一个 NSStatusItem（autosaveName 后缀 `.single`）；无电池时不画电池图形。CI 断言项宽 ≤ 52pt。不加 Dock 图标（LSUIElement）。
 6. 面板是不抢焦点的 NSPanel；不用 MenuBarExtra。
 7. 签名只做 ad-hoc，不开 hardened runtime；Sparkle 私钥只在 GitHub Secret，脚本经 stdin 传给 `sign_update`，任何日志不得打印。
 8. 产品名、Bundle ID、仓库名、Sparkle 版本与公钥只写在 `project.env`；Swift 代码里不硬编码产品名。

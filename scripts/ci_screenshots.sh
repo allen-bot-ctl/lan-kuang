@@ -38,15 +38,20 @@ shoot() {  # $1=后缀  其余=启动参数
   local pid=$!
   sleep 6
   cat "$log"
-  local mb pn
+  local mb pn it w
   mb=$(awk '/^DEBUG_RECT_MENUBAR/{print $2}' "$log")
+  it=$(awk '/^DEBUG_RECT_ITEM/{print $2}' "$log")
+  w=$(awk '/^DEBUG_ITEM_WIDTH/{print $2}' "$log")
+  awk -v w="$w" 'BEGIN{exit !(w != "" && w+0 > 0 && w+0 <= 52)}' || { kill -TERM "$pid" || true; echo "::error::菜单栏项宽 ${w}pt 超过 52pt"; return 1; }
+  echo "RELEASE: item_width${tag}=${w}pt"
   pn=$(awk '/^DEBUG_RECT_PANEL/{print $2}' "$log")
   [ -n "$mb" ] && [ -n "$pn" ] || { kill -TERM "$pid" || true; echo "::error::应用没有输出截图区域"; return 1; }
   screencapture -x "shots/full$tag.png"
   screencapture -x -R"$mb" "shots/menubar$tag.png"
+  screencapture -x -R"$it" "shots/item$tag.png"
   screencapture -x -R"$pn" "shots/panel$tag.png"
   kill -TERM "$pid" 2>/dev/null || true; sleep 1; kill -KILL "$pid" 2>/dev/null || true
-  for f in "shots/menubar$tag.png" "shots/panel$tag.png"; do
+  for f in "shots/menubar$tag.png" "shots/panel$tag.png" "shots/item$tag.png"; do
     sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' '; echo
     nonblack "$f" || { echo "::error::$f 全黑"; return 1; }
   done
@@ -54,6 +59,9 @@ shoot() {  # $1=后缀  其余=启动参数
 }
 
 shoot "" --debug-open-panel
-shoot "-longest" --debug-open-panel --debug-longest
+shoot "-longest" --debug-open-panel --debug-longest --debug-battery=ac,100
+for st in charging,18 ac,100 battery,18 battery,3 none; do
+  shoot "-bat-${st%%,*}-${st#*,}" --debug-open-panel --debug-battery="$st"
+done
 grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
 ls -l shots
