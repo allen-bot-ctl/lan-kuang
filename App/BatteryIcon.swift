@@ -76,13 +76,13 @@ enum StatusRenderer {
         // 先用稍大的同形符号挖出一圈描边空隙，再用墨色实心画符号本身：
         // 不论电量多少（填充是否盖到中间），⚡/插头都清晰可见。
         if let halo = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 9, weight: .black)) {
+            .withSymbolConfiguration(.init(pointSize: 7.5, weight: .black)) {
             let s = halo.size
             halo.draw(in: NSRect(x: body.midX - s.width / 2, y: body.midY - s.height / 2, width: s.width, height: s.height),
                       from: .zero, operation: .destinationOut, fraction: 1)
         }
         if let sym = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 7, weight: .black)) {
+            .withSymbolConfiguration(.init(pointSize: 6, weight: .black)) {
             let s = sym.size
             let r = NSRect(x: body.midX - s.width / 2, y: body.midY - s.height / 2, width: s.width, height: s.height)
             let tinted = NSImage(size: s, flipped: false) { rect in
