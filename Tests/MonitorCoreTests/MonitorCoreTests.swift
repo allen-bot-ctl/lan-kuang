@@ -212,6 +212,11 @@ final class SingleItemTests: XCTestCase {
         XCTAssertNil(parseDebugBattery("weird,1"))
         XCTAssertNil(parseDebugBattery("battery"))
     }
+    func testBatteryPanelValue() {
+        XCTAssertEqual(batteryPanelValue(BatteryState(percent: 74, isCharging: true, onAC: true)), "74% · 充电中")
+        XCTAssertEqual(batteryPanelValue(BatteryState(percent: 100, isCharging: false, onAC: true)), "100% · 已接电源")
+        XCTAssertEqual(batteryPanelValue(BatteryState(percent: 15, isCharging: false, onAC: false)), "15% · 使用电池")
+    }
     func testWidthBudget() {
         // v0.1.3 竖电池：文字列 23pt 时带电池总宽 42pt（≤ 44pt 上限）
         XCTAssertEqual(StatusItemLayout.maxWidth, 76)

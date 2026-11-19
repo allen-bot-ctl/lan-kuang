@@ -7,6 +7,8 @@ final class PanelModel: ObservableObject {
     @Published var cpu: Int = 0
     @Published var disk: DiskUsage?
     @Published var net = NetRate(up: 0, down: 0)
+    /// v0.1.11：电池行；nil = 无电池（台式机），不显示该行。
+    @Published var battery: BatteryState?
     /// 布局自检用，不触发重绘。
     var frames: [String: CGRect] = [:]
     /// 调试：固定最长文案（C4 截图与布局自检）。
@@ -48,10 +50,17 @@ struct Row: View {
     let id: String
     let label: String
     let value: String
-    let percent: Int?   // nil：不画环，只留同宽空位，保证标签对齐
+    let percent: Int?   // nil：不画环，改画静态图标（symbol），保证标签对齐
+    var symbol: String? = nil
     var body: some View {
         HStack(spacing: 0) {
             if let percent { Ring(fraction: ringFraction(percent: percent)) }
+            else if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.accentColor)
+                    .frame(width: PanelLayout.ringDiameter, height: PanelLayout.ringDiameter)
+            }
             else { Color.clear.frame(width: PanelLayout.ringDiameter, height: PanelLayout.ringDiameter) }
             Spacer().frame(width: PanelLayout.ringLabelGap)
             Text(label).foregroundColor(.secondary).lineLimit(1).fixedSize().reportFrame(id + ".label")
@@ -78,7 +87,10 @@ struct PanelView: View {
             Row(id: "disk", label: "磁盘",
                 value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—",
                 percent: model.disk?.percent ?? 0)
-            Row(id: "net", label: "网络", value: formatNetRow(model.net), percent: nil)
+            Row(id: "net", label: "网络", value: formatNetRow(model.net), percent: nil, symbol: "arrow.up.arrow.down")
+            if let b = model.battery {
+                Row(id: "bat", label: "电池", value: batteryPanelValue(b), percent: clampPercent(b.percent))
+            }
         }
         .padding(.horizontal, PanelLayout.horizontalPadding)
         .padding(.vertical, 10)
@@ -116,9 +128,9 @@ final class HoverPanel: NSPanel {
         effect.material = .popover
         effect.state = .active
         effect.blendingMode = .behindWindow
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 10
-        effect.layer?.masksToBounds = true
+        // v0.1.11：用 maskImage 裁圆角（窗口阴影与背景都跟着圆角走）。
+        // 旧版只给 layer 设 cornerRadius，窗口本身仍是方的，左下/右下角会露出方形底。
+        effect.maskImage = HoverPanel.roundedMask(radius: 10)
         let host = NSHostingView(rootView: PanelView(model: model))
         host.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(host)
@@ -135,6 +147,19 @@ final class HoverPanel: NSPanel {
     }
     override var canBecomeKey: Bool { false }
 
+    /// 可拉伸的圆角蒙版（capInsets 保证任意尺寸下圆角不变形）。
+    static func roundedMask(radius: CGFloat) -> NSImage {
+        let d = radius * 2 + 1
+        let img = NSImage(size: NSSize(width: d, height: d), flipped: false) { r in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: r, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        img.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        img.resizingMode = .stretch
+        return img
+    }
+
     /// 放在状态栏按钮正下方，水平居中并夹在屏幕可见区域内。
     func show(below button: NSStatusBarButton) {
         guard let bw = button.window else { return }
@@ -147,5 +172,6 @@ final class HoverPanel: NSPanel {
         }
         setFrameOrigin(NSPoint(x: x, y: y))
         orderFrontRegardless()
+        invalidateShadow()   // 阴影按圆角遮罩重算
     }
 }

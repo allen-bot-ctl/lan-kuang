@@ -51,6 +51,11 @@ public func parseBattery(_ d: [String: Any]) -> BatteryState? {
 public func batteryGlyphSpec(_ s: BatteryState?) -> BatteryIconSpec? { s.map(batteryIconSpec) }
 
 /// 右键菜单第一行的灰色状态行；无电池返回 nil（不显示该行与分隔线）。
+/// v0.1.11 面板电池行的数值：「74% · 充电中」。
+public func batteryPanelValue(_ s: BatteryState) -> String {
+    "\(clampPercent(s.percent))% · \(batteryStatusText(s))"
+}
+
 public func batteryMenuLine(_ s: BatteryState?) -> String? {
     guard let s else { return nil }
     return "电池 \(clampPercent(s.percent))% · \(batteryStatusText(s))"

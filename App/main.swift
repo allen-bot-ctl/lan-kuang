@@ -249,7 +249,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         print("DEBUG_RECT_MENUBAR " + top(menubar))
         print("DEBUG_RECT_PANEL " + top(panel.frame.insetBy(dx: -8, dy: -8)))
         let f = model.frames
-        let ids = ["mem", "cpu", "disk", "net"]
+        let ids = ["mem", "cpu", "disk", "net"] + (model.battery == nil ? [] : ["bat"])
         let lmin = ids.map { Double(f[$0 + ".label"]?.minX ?? -1) }
         let lmax = ids.map { Double(f[$0 + ".label"]?.maxX ?? -1) }
         let vmin = ids.map { Double(f[$0 + ".value"]?.minX ?? -1) }
@@ -291,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func refreshBattery() {
         if let d = debugBattery { battery = d } else { battery = Sampler.battery() }
+        if model.battery != battery { model.battery = battery }
         redrawItem()
     }
 
