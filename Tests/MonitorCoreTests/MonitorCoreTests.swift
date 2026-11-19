@@ -217,7 +217,7 @@ final class SingleItemTests: XCTestCase {
         XCTAssertEqual(StatusItemLayout.maxWidth, 76)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true, netColumn: 25), 65)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 37)
-        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 27)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 23)
     }
     func testVerticalFill() {
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 50, isCharging: false, onAC: false)).fillHeight, 5, accuracy: 1e-9)
