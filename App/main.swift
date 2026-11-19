@@ -40,6 +40,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var panelTimer: Timer?
     private var diskTimer: Timer?
     private var graceTimer: Timer?
+    private var fillTimer: Timer?
+    private var fillPrevTicks: CPUTicks?
+    private var fillStartedAt: TimeInterval?
     private var powerSource: CFRunLoopSource?
     private let contextMenu = NSMenu()
 
@@ -306,6 +309,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         model.loginEnabled = SMAppService.mainApp.status == .enabled
         panel.show(below: b)
         startPanelTimers()
+        startFastFill()
+    }
+
+    /// 曲线没满时临时加速采样（只在面板打开时），满了或面板关掉就恢复 2 秒一次。
+    private func startFastFill() {
+        guard fillTimer == nil, gate.isActive,
+              FastFill.needed(cpuCount: cpuHistory.count, memCount: memHistory.count) else { return }
+        fillPrevTicks = Sampler.cpuTicks(); fillStartedAt = ProcessInfo.processInfo.systemUptime
+        let t = Timer(timeInterval: FastFill.interval, repeats: true) { [weak self] _ in self?.fastFillTick() }
+        RunLoop.main.add(t, forMode: .common)
+        fillTimer = t
+    }
+
+    private func fastFillTick() {
+        guard panel.isVisible,
+              FastFill.needed(cpuCount: cpuHistory.count, memCount: memHistory.count) else {
+            if panel.isVisible, let s = fillStartedAt {
+                print(String(format: "DEBUG_FASTFILL cpu=%d mem=%d secs=%.2f", cpuHistory.count, memHistory.count, ProcessInfo.processInfo.systemUptime - s)); fflush(stdout)
+            }
+            stopFastFill(); return
+        }
+        let t = Sampler.cpuTicks()
+        if let p = fillPrevTicks, cpuHistory.count < cpuHistory.capacity { cpuHistory.append(cpuSplit(previous: p, current: t)) }
+        fillPrevTicks = t
+        if memHistory.count < memHistory.capacity {
+            memHistory.append(Double(percentOf(used: Sampler.memoryUsedBytes(), total: Sampler.memoryTotalBytes)))
+        }
+        pushHistory()
+    }
+
+    private func stopFastFill() {
+        fillTimer?.invalidate(); fillTimer = nil; fillPrevTicks = nil; fillStartedAt = nil
     }
 
     private func hidePanel() {
@@ -313,6 +348,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panelTimer?.invalidate(); panelTimer = nil
         diskTimer?.invalidate(); diskTimer = nil
         panelPrevTicks = nil
+        stopFastFill()
         panel.orderOut(nil)
     }
 
@@ -442,6 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func pause() {
+        stopFastFill()
         for t in [menuBarTimer, batteryTimer, panelTimer, diskTimer] { t?.invalidate() }
         menuBarTimer = nil; batteryTimer = nil; panelTimer = nil; diskTimer = nil
     }
