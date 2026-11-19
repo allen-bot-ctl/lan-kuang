@@ -214,7 +214,8 @@ final class SingleItemTests: XCTestCase {
     }
     func testWidthBudget() {
         // v0.1.3 竖电池：文字列 23pt 时带电池总宽 42pt（≤ 44pt 上限）
-        XCTAssertEqual(StatusItemLayout.maxWidth, 44)
+        XCTAssertEqual(StatusItemLayout.maxWidth, 76)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true, netColumn: 25), 71)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 42)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 27)
     }
@@ -224,5 +225,47 @@ final class SingleItemTests: XCTestCase {
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 1, isCharging: false, onAC: false)).fillHeight, 1, accuracy: 1e-9)
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 0, isCharging: false, onAC: false)).fillHeight, 0)
         XCTAssertEqual(StatusItemLayout.glyphHeight, 16, accuracy: 1e-9)
+    }
+}
+
+final class NetworkTests: XCTestCase {
+    func testFilter() {
+        for n in ["en0", "en5", "en7"] { XCTAssertTrue(isPhysicalInterface(n), n) }
+        for n in ["utun3", "utun5", "lo0", "awdl0", "llw0", "bridge0", "ap1", "gif0"] { XCTAssertFalse(isPhysicalInterface(n), n) }
+    }
+    func testDeltaSkipsUtunAndRegression() {
+        // 老板 Mac 实测：下载 20MB，en7 +21.2MB，utun5 +40.5MB
+        let p = ["en7": InterfaceCounters(rx: 100, tx: 50), "utun5": InterfaceCounters(rx: 0, tx: 0),
+                 "en0": InterfaceCounters(rx: 5_000, tx: 0)]
+        let c = ["en7": InterfaceCounters(rx: 21_189_133, tx: 1_260_091), "utun5": InterfaceCounters(rx: 40_468_532, tx: 122_507),
+                 "en0": InterfaceCounters(rx: 10, tx: 0), "en9": InterfaceCounters(rx: 999, tx: 999)]
+        let d = physicalDelta(previous: p, current: c)
+        XCTAssertEqual(d.rx, 21_189_033)   // en0 回退记 0，en9 新出现不计，utun5 不计
+        XCTAssertEqual(d.tx, 1_260_041)
+        let r = netRate(previous: p, current: c, seconds: 2)
+        XCTAssertEqual(r.down, 21_189_033.0 / 2, accuracy: 0.01)
+        let back = netRate(previous: c, current: p, seconds: 2)
+        XCTAssertEqual(back, NetRate(up: 0, down: 0))
+    }
+    func testShort() {
+        XCTAssertEqual(formatRateShort(0), "0B")
+        XCTAssertEqual(formatRateShort(205), "205B")
+        XCTAssertEqual(formatRateShort(999), "999B")
+        XCTAssertEqual(formatRateShort(1000), "1.0K")
+        XCTAssertEqual(formatRateShort(2150), "2.1K")
+        XCTAssertEqual(formatRateShort(10 * 1024), "10K")
+        XCTAssertEqual(formatRateShort(999 * 1024), "999K")
+        XCTAssertEqual(formatRateShort(1000 * 1024), "1.0M")
+        XCTAssertEqual(formatRateShort(10240), "10K")
+        XCTAssertEqual(formatRateShort(1023 * 1024), "1.0M")
+        XCTAssertEqual(formatRateShort(12 * 1024 * 1024), "12M")
+        XCTAssertEqual(formatRateShort(12.3 * 1024 * 1024), "12M")
+        for b in stride(from: 0.0, to: 5e9, by: 3.7e6) { XCTAssertLessThanOrEqual(formatRateShort(b).count, 4, "\(b)") }
+    }
+    func testFull() {
+        XCTAssertEqual(formatRateFull(2150), "2.1 KB/s")
+        XCTAssertEqual(formatRateFull(205), "205 B/s")
+        XCTAssertEqual(formatNetRow(NetRate(up: 2150, down: 205)), "↑ 2.1 KB/s · ↓ 205 B/s")
+        XCTAssertEqual(formatNetLines(NetRate(up: 2150, down: 205)).0, "↑2.1K")
     }
 }

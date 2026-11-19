@@ -6,6 +6,7 @@ final class PanelModel: ObservableObject {
     @Published var memTotal: UInt64 = 0
     @Published var cpu: Int = 0
     @Published var disk: DiskUsage?
+    @Published var net = NetRate(up: 0, down: 0)
     /// 布局自检用，不触发重绘。
     var frames: [String: CGRect] = [:]
     /// 调试：固定最长文案（C4 截图与布局自检）。
@@ -47,10 +48,11 @@ struct Row: View {
     let id: String
     let label: String
     let value: String
-    let percent: Int
+    let percent: Int?   // nil：不画环，只留同宽空位，保证标签对齐
     var body: some View {
         HStack(spacing: 0) {
-            Ring(fraction: ringFraction(percent: percent))
+            if let percent { Ring(fraction: ringFraction(percent: percent)) }
+            else { Color.clear.frame(width: PanelLayout.ringDiameter, height: PanelLayout.ringDiameter) }
             Spacer().frame(width: PanelLayout.ringLabelGap)
             Text(label).foregroundColor(.secondary).lineLimit(1).fixedSize().reportFrame(id + ".label")
             Spacer(minLength: 8)
@@ -76,6 +78,7 @@ struct PanelView: View {
             Row(id: "disk", label: "磁盘",
                 value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—",
                 percent: model.disk?.percent ?? 0)
+            Row(id: "net", label: "网络", value: formatNetRow(model.net), percent: nil)
         }
         .padding(.horizontal, PanelLayout.horizontalPadding)
         .padding(.vertical, 10)

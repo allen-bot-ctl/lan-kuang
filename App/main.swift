@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var battery: BatteryState?
     private var memTitle = "0G"
     private var cpuTitle = "0%"
+    private var netLines = ("↑0B", "↓0B")
+    private var prevNet: [String: InterfaceCounters]?
+    private var prevNetAt: TimeInterval = 0
     private let batteryLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let batteryLineSeparator = NSMenuItem.separator()
 
@@ -47,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let cases = ["ac,100", "charging,18", "battery,62", "battery,15", "none"]
             for c in cases {
                 guard let st = parseDebugBattery(c) else { continue }
-                let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "128G", bottom: "100%", height: 24)
+                let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "13G", bottom: "25%", height: 24, net: ("↑2.1K", "↓205K"))
                 let name = "icon2x-" + c.replacingOccurrences(of: ",", with: "-") + ".png"
                 try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent(name))
                 try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent(name.replacingOccurrences(of: "icon2x", with: "icon1x")))
@@ -226,12 +229,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let bf = statsItem.button?.window?.frame ?? .zero
         let menubar = NSRect(x: bf.minX - 160, y: bf.minY, width: bf.width + 320, height: bf.height)
         print("DEBUG_SCALE \(scale)")
-        print("DEBUG_ITEM_WIDTH \(statsItem.length) max=\(StatusItemLayout.maxWidth) text=\(StatusRenderer.textColumnWidth)")
+        print("DEBUG_ITEM_WIDTH \(statsItem.length) max=\(StatusItemLayout.maxWidth) text=\(StatusRenderer.textColumnWidth) net=\(StatusRenderer.netColumnWidth)")
+        let nc = Sampler.interfaceCounters()
+        print("DEBUG_NET " + nc.keys.sorted().map { "\($0)\(isPhysicalInterface($0) ? "*" : "")=\(nc[$0]!.rx)/\(nc[$0]!.tx)" }.joined(separator: " "))
         print("DEBUG_RECT_ITEM " + top(bf.insetBy(dx: -4, dy: 0)))
         print("DEBUG_RECT_MENUBAR " + top(menubar))
         print("DEBUG_RECT_PANEL " + top(panel.frame.insetBy(dx: -8, dy: -8)))
         let f = model.frames
-        let ids = ["mem", "cpu", "disk"]
+        let ids = ["mem", "cpu", "disk", "net"]
         let lmin = ids.map { Double(f[$0 + ".label"]?.minX ?? -1) }
         let lmax = ids.map { Double(f[$0 + ".label"]?.maxX ?? -1) }
         let vmin = ids.map { Double(f[$0 + ".value"]?.minX ?? -1) }
@@ -254,8 +259,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t = Sampler.cpuTicks()
         let cpu = prevTicks.map { cpuPercent(previous: $0, current: t) } ?? 0
         prevTicks = t
+        let nc = Sampler.interfaceCounters(), now = ProcessInfo.processInfo.systemUptime
+        if let p = prevNet {
+            let r = netRate(previous: p, current: nc, seconds: now - prevNetAt)
+            netLines = formatNetLines(r); model.net = r
+        }
+        prevNet = nc; prevNetAt = now
         if debugLongest {   // CI：最长文案定宽检查
             memTitle = StatusItemLayout.widestLines.0; cpuTitle = StatusItemLayout.widestLines.1
+            netLines = netWidestLines
+            model.net = NetRate(up: 999 * 1024, down: 999 * 1024 * 1024)
         } else {
             memTitle = formatMemoryTitle(usedBytes: Sampler.memoryUsedBytes())
             cpuTitle = formatCPUTitle(percent: cpu)
@@ -271,7 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func redrawItem() {
         guard let b = statsItem.button else { return }
         let h = NSStatusBar.system.thickness
-        let img = StatusRenderer.image(battery: batteryGlyphSpec(battery), top: memTitle, bottom: cpuTitle, height: h)
+        let img = StatusRenderer.image(battery: batteryGlyphSpec(battery), top: memTitle, bottom: cpuTitle, height: h, net: netLines)
         statsItem.length = img.size.width
         b.image = img
         b.title = ""
@@ -279,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func resume() {
         guard gate.isActive else { return }
-        prevTicks = nil
+        prevTicks = nil; prevNet = nil
         refreshStats(); refreshBattery()
         if menuBarTimer == nil { menuBarTimer = repeating(Refresh.menuBar) { [weak self] in self?.refreshStats() } }
         if batteryTimer == nil { batteryTimer = repeating(Refresh.battery) { [weak self] in self?.refreshBattery() } }

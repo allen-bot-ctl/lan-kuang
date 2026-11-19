@@ -87,11 +87,15 @@ public enum StatusItemLayout {
     public static let gap: Double = 4
     public static let fontSize: Double = 10
     public static let lineHeight: Double = 10.5
-    public static let maxWidth: Double = 44
+    public static let maxWidth: Double = 76
     public static let widestLines = ("128G", "100%")
 
-    public static func width(textColumn: Double, hasBattery: Bool) -> Double {
+    /// 第二列（内存/CPU）与第三列（网速）之间的间距。
+    public static let columnGap: Double = 4
+
+    public static func width(textColumn: Double, hasBattery: Bool, netColumn: Double = 0) -> Double {
         let battery = hasBattery ? glyphWidth + gap : 0
-        return (sidePadding * 2 + battery + textColumn).rounded(.up)
+        let net = netColumn > 0 ? columnGap + netColumn : 0
+        return (sidePadding * 2 + battery + textColumn + net).rounded(.up)
     }
 }

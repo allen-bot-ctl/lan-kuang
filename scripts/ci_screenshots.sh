@@ -42,7 +42,7 @@ shoot() {  # $1=后缀  其余=启动参数
   mb=$(awk '/^DEBUG_RECT_MENUBAR/{print $2}' "$log")
   it=$(awk '/^DEBUG_RECT_ITEM/{print $2}' "$log")
   w=$(awk '/^DEBUG_ITEM_WIDTH/{print $2}' "$log")
-  awk -v w="$w" 'BEGIN{exit !(w != "" && w+0 > 0 && w+0 <= 44)}' || { kill -TERM "$pid" || true; echo "::error::菜单栏项宽 ${w}pt 超过 44pt"; return 1; }
+  awk -v w="$w" 'BEGIN{exit !(w != "" && w+0 > 0 && w+0 <= 76)}' || { kill -TERM "$pid" || true; echo "::error::菜单栏项宽 ${w}pt 超过 76pt"; return 1; }
   echo "RELEASE: item_width${tag}=${w}pt"
   pn=$(awk '/^DEBUG_RECT_PANEL/{print $2}' "$log")
   [ -n "$mb" ] && [ -n "$pn" ] || { kill -TERM "$pid" || true; echo "::error::应用没有输出截图区域"; return 1; }

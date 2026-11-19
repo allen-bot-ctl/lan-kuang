@@ -51,4 +51,33 @@ enum Sampler {
         }
         return nil
     }
+
+    /// 所有处于 up 状态的网卡累计收发字节（sysctl NET_RT_IFLIST2，64 位 if_data64）。过滤交给 MonitorCore.isPhysicalInterface。
+    static func interfaceCounters() -> [String: InterfaceCounters] {
+        var out: [String: InterfaceCounters] = [:]
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0]
+        var len = 0
+        guard sysctl(&mib, 6, nil, &len, nil, 0) == 0, len > 0 else { return out }
+        var buf = [UInt8](repeating: 0, count: len)
+        guard sysctl(&mib, 6, &buf, &len, nil, 0) == 0 else { return out }
+        buf.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress else { return }
+            var off = 0
+            while off + MemoryLayout<if_msghdr>.size <= len {
+                let hdr = base.advanced(by: off).assumingMemoryBound(to: if_msghdr.self).pointee
+                let msgLen = Int(hdr.ifm_msglen)
+                if msgLen == 0 { break }
+                if Int32(hdr.ifm_type) == RTM_IFINFO2, (hdr.ifm_flags & IFF_UP) != 0 {
+                    let h2 = base.advanced(by: off).assumingMemoryBound(to: if_msghdr2.self).pointee
+                    let sdlPtr = base.advanced(by: off + MemoryLayout<if_msghdr2>.size).assumingMemoryBound(to: sockaddr_dl.self)
+                    let nlen = Int(sdlPtr.pointee.sdl_nlen)
+                    let namePtr = UnsafeRawPointer(sdlPtr).advanced(by: MemoryLayout.offset(of: \sockaddr_dl.sdl_data)!)
+                    let name = String(decoding: UnsafeRawBufferPointer(start: namePtr, count: nlen), as: UTF8.self)
+                    out[name] = InterfaceCounters(rx: h2.ifm_data.ifi_ibytes, tx: h2.ifm_data.ifi_obytes)
+                }
+                off += msgLen
+            }
+        }
+        return out
+    }
 }

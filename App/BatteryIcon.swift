@@ -30,12 +30,21 @@ enum StatusRenderer {
         return Double(ceil(max(w1, w2)))
     }
 
-    static func width(hasBattery: Bool) -> CGFloat {
-        CGFloat(L.width(textColumn: textColumnWidth, hasBattery: hasBattery))
+    /// 第三列（网速）定宽，按 netWidestLines。
+    static var netColumnWidth: Double {
+        let a: [NSAttributedString.Key: Any] = [.font: font]
+        let w1 = (netWidestLines.0 as NSString).size(withAttributes: a).width
+        let w2 = (netWidestLines.1 as NSString).size(withAttributes: a).width
+        return Double(ceil(max(w1, w2)))
     }
 
-    static func image(battery: BatteryIconSpec?, top: String, bottom: String, height: CGFloat) -> NSImage {
-        let size = NSSize(width: width(hasBattery: battery != nil), height: height)
+    static func width(hasBattery: Bool, hasNet: Bool = true) -> CGFloat {
+        CGFloat(L.width(textColumn: textColumnWidth, hasBattery: hasBattery, netColumn: hasNet ? netColumnWidth : 0))
+    }
+
+    static func image(battery: BatteryIconSpec?, top: String, bottom: String, height: CGFloat,
+                      net: (String, String)? = nil) -> NSImage {
+        let size = NSSize(width: width(hasBattery: battery != nil, hasNet: net != nil), height: height)
         let red = battery?.isLowRed ?? false
         let img = NSImage(size: size, flipped: false) { _ in
             let ink: NSColor = red ? .labelColor : .black
@@ -52,6 +61,14 @@ enum StatusRenderer {
             let adjust = (lh - box) / 2
             (bottom as NSString).draw(at: NSPoint(x: x, y: blockBottom + adjust), withAttributes: attrs)
             (top as NSString).draw(at: NSPoint(x: x, y: blockBottom + lh + adjust), withAttributes: attrs)
+            if let (up, down) = net {   // 第三列：上行在上、下行在下，右对齐定宽
+                // 第三列右缘 = 整项宽 − 右边距；两行各自右对齐
+                let right = size.width - CGFloat(L.sidePadding)
+                let dw = (down as NSString).size(withAttributes: attrs).width
+                let uw = (up as NSString).size(withAttributes: attrs).width
+                (down as NSString).draw(at: NSPoint(x: right - dw, y: blockBottom + adjust), withAttributes: attrs)
+                (up as NSString).draw(at: NSPoint(x: right - uw, y: blockBottom + lh + adjust), withAttributes: attrs)
+            }
             return true
         }
         img.isTemplate = !red
