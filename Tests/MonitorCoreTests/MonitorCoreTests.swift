@@ -294,6 +294,10 @@ final class CardsTests: XCTestCase {
         XCTAssertEqual(cardIDs(hasBattery: false).count, 5)
         XCTAssertEqual(cardIDs(hasBattery: true).first, "overview")
     }
+    func testSplitRate() {
+        let r = splitRate(205); XCTAssertEqual(r.number, "205"); XCTAssertEqual(r.unit, "B/s")
+        let k = splitRate(999 * 1024); XCTAssertEqual(k.unit, "KB/s")
+    }
     func testHistoryCap() {
         var h = History<Int>()
         for i in 0..<300 { h.append(i) }

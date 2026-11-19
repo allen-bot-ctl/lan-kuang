@@ -103,3 +103,10 @@ public struct CardPager: Equatable {
 /// 内存卡底行：交换已用（vm.swapusage）等用 1 位小数 G。
 public func formatGiB1(_ bytes: UInt64) -> String { String(format: "%.1f G", Double(bytes) / Units.gib) }
 public func formatGB1(_ bytes: UInt64) -> String { String(format: "%.1f G", Double(bytes) / Units.gb) }
+
+/// 网络卡：把 "6.4 KB/s" 拆成数字 "6.4" 和单位 "KB/s"。
+public func splitRate(_ bytesPerSecond: Double) -> (number: String, unit: String) {
+    let s = formatRateFull(bytesPerSecond)
+    guard let i = s.firstIndex(of: " ") else { return (s, "") }
+    return (String(s[..<i]), String(s[s.index(after: i)...]))
+}

@@ -254,10 +254,40 @@ struct DiskCard: View {
                     BigLine(label: "共", value: d.map { formatGB1($0.total) } ?? "—")
                 }
                 .font(.system(size: 13))
-                Spacer(minLength: 0)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+}
+
+/// 网络卡（契约 092b11e，参考 Clash Verge）：上传橙、下载蓝两块等宽小卡。
+struct RateTile: View {
+    let arrow: String
+    let label: String
+    let rate: Double
+    let color: Color
+    var body: some View {
+        let r = splitRate(rate)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                ZStack {
+                    Circle().fill(color)
+                    Text(arrow).font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                }
+                .frame(width: 22, height: 22)
+                Text(label).font(.system(size: 11)).foregroundColor(.secondary)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(r.number).font(.system(size: 20, weight: .semibold).monospacedDigit())
+                Text(r.unit).font(.system(size: 11)).foregroundColor(.secondary)
+            }
+            .lineLimit(1)
+            .fixedSize()
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(color.opacity(0.2), lineWidth: 1))
     }
 }
 
@@ -266,13 +296,11 @@ struct NetCard: View {
     var body: some View {
         VStack(spacing: 6) {
             CardHeader(title: "网络", value: "")
-            VStack(alignment: .leading, spacing: 4) {
-                Text("↑ " + formatRateFull(model.net.up))
-                Text("↓ " + formatRateFull(model.net.down))
+            HStack(spacing: 8) {
+                RateTile(arrow: "↑", label: "上传", rate: model.net.up, color: Color(red: 0xF5 / 255, green: 0x9E / 255, blue: 0x0B / 255))
+                RateTile(arrow: "↓", label: "下载", rate: model.net.down, color: .accentColor)
             }
-            .font(.system(size: 24, weight: .medium).monospacedDigit())
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -312,9 +340,8 @@ struct BatCard: View {
                     BigBattery(state: b)
                     Text("\(clampPercent(b.percent))%").font(.system(size: 24, weight: .medium).monospacedDigit())
                 }
-                Spacer(minLength: 0)
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
