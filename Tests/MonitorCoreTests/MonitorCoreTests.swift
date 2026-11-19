@@ -294,6 +294,11 @@ final class CardsTests: XCTestCase {
         XCTAssertEqual(cardIDs(hasBattery: false).count, 5)
         XCTAssertEqual(cardIDs(hasBattery: true).first, "overview")
     }
+    func testContextMenuAndHeight() {
+        XCTAssertEqual(contextMenuTitles(displayName: "栏况"), ["检查更新…", "设置中心…", "退出栏况"])
+        XCTAssertEqual(CardLayout.overviewHeight(rows: 5), 170)
+        XCTAssertEqual(CardLayout.overviewHeight(rows: 4), 144)
+    }
     func testSplitRate() {
         let r = splitRate(205); XCTAssertEqual(r.number, "205"); XCTAssertEqual(r.unit, "B/s")
         let k = splitRate(999 * 1024); XCTAssertEqual(k.unit, "KB/s")

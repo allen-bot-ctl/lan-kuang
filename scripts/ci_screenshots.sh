@@ -74,6 +74,7 @@ for ap in dark light; do
     shoot "-card$pg-$ap" --debug-open-panel --debug-page=$pg --debug-appearance=$ap --debug-battery=charging,62
   done
 done
+shoot "-settings" --debug-open-panel --debug-settings --debug-battery=charging,62
 # v0.1.12 M1：合成滚动事件翻页（有电池 6 张、没电池 5 张）
 for st in charging,62 none; do
   log="/tmp/scroll-${st%%,*}.log"

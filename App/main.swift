@@ -26,8 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastDrawKey = ""
     private var prevNet: [String: InterfaceCounters]?
     private var prevNetAt: TimeInterval = 0
-    private let batteryLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-    private let batteryLineSeparator = NSMenuItem.separator()
 
     private var gate = RefreshGate()
     private var prevTicks: CPUTicks?
@@ -44,7 +42,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var graceTimer: Timer?
     private var powerSource: CFRunLoopSource?
     private let contextMenu = NSMenu()
-    private let loginItem = NSMenuItem(title: "开机自启动", action: #selector(toggleLoginItem), keyEquivalent: "")
 
     #if canImport(Sparkle)
     private let updater = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
@@ -83,6 +80,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         }
                     }
                 }
+            }
+            for ap in ["dark", "light"] {
+                m.showSettings = true; m.loginEnabled = true
+                let v = PanelView(model: m).background(Color(nsColor: .windowBackgroundColor))
+                    .environment(\.colorScheme, ap == "dark" ? .dark : .light)
+                let r = ImageRenderer(content: v); r.scale = 2
+                if let cg = r.cgImage {
+                    try? NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:])?
+                        .write(to: dir.appendingPathComponent("settings-\(ap).png"))
+                }
+                m.showSettings = false
             }
             print("DEBUG_CARDS rendered=\(m.cards.count * 2)")
             exit(0)
@@ -157,6 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.debouncer.handle(.click)
                 self.applyHoverState()
                 if let p = self.debugPage { self.panel.resetPage(to: p) }
+                if CommandLine.arguments.contains("--debug-settings") { self.model.showSettings = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.printDebugGeometry() }
                 if CommandLine.arguments.contains("--debug-scroll-test") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runScrollTest() }
@@ -213,23 +222,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: 菜单
 
     private func buildMenu() {
-        let update = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
-        update.target = self
-        loginItem.target = self
+        // v0.1.14：只留「检查更新」「设置中心」「退出」；电池行与开机自启动移到面板。
         let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? ""
-        let quit = NSMenuItem(title: "退出" + displayName, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        batteryLineItem.isEnabled = false
+        let t = contextMenuTitles(displayName: displayName)
+        let update = NSMenuItem(title: t[0], action: #selector(checkForUpdates), keyEquivalent: "")
+        update.target = self
+        let settings = NSMenuItem(title: t[1], action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        let quit = NSMenuItem(title: t[2], action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         contextMenu.autoenablesItems = false
-        contextMenu.items = [batteryLineItem, batteryLineSeparator, update, loginItem, .separator(), quit]
-        contextMenu.delegate = self
+        contextMenu.items = [update, settings, .separator(), quit]
+        model.onToggleLogin = { [weak self] on in self?.setLoginItem(on) }
+        model.onCheckUpdates = { [weak self] in self?.checkForUpdates() }
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        let line = batteryMenuLine(battery)
-        batteryLineItem.title = line ?? ""
-        batteryLineItem.isHidden = line == nil
-        batteryLineSeparator.isHidden = line == nil
+    /// 右键「设置中心」：弹出面板并直接打开设置卡（点击态，鼠标移入再移出才收起）。
+    @objc private func openSettings() {
+        debouncer.forceHide()
+        if panel.isVisible { hidePanel() }
+        debouncer.handle(.click)
+        applyHoverState()
+        model.showSettings = true
     }
 
     @objc private func statusClicked(_ sender: NSStatusBarButton) {
@@ -254,13 +267,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         #endif
     }
 
-    @objc private func toggleLoginItem() {
+    private func setLoginItem(_ on: Bool) {
         do {
-            if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
-            else { try SMAppService.mainApp.register() }
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
         } catch {
             NSLog("开机自启动切换失败: \(error.localizedDescription)")
         }
+        model.loginEnabled = SMAppService.mainApp.status == .enabled
     }
 
     // MARK: 面板
@@ -289,7 +302,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshPanel()
         refreshDisk()
         pushHistory()
-        panel.resetPage()   // 每次打开都从总览开始
+        panel.resetPage()   // 每次打开都从总览开始（设置卡也关掉）
+        model.loginEnabled = SMAppService.mainApp.status == .enabled
         panel.show(below: b)
         startPanelTimers()
     }
