@@ -215,8 +215,8 @@ final class SingleItemTests: XCTestCase {
     func testWidthBudget() {
         // v0.1.3 竖电池：文字列 23pt 时带电池总宽 42pt（≤ 44pt 上限）
         XCTAssertEqual(StatusItemLayout.maxWidth, 76)
-        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true, netColumn: 25), 71)
-        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 42)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true, netColumn: 25), 69)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 41)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 27)
     }
     func testVerticalFill() {

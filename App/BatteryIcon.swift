@@ -32,6 +32,8 @@ enum StatusRenderer {
 
     /// 第三列（网速）定宽：矢量箭头 + 间隙 + 最长数字（"999K"）。字体自带的 ↑ 有 8.2pt 宽，整项会到 77pt，所以箭头自己画。
     static let arrowWidth: CGFloat = 5, arrowGap: CGFloat = 1
+    /// 调试：最近一次绘制的 电池→文字、文字→箭头、箭头→数字、右侧留白（pt）。
+    static var lastGaps: (Double, Double, Double, Double) = (0, 0, 0, 0)
     static var netColumnWidth: Double {
         let a: [NSAttributedString.Key: Any] = [.font: font]
         let w1 = (String(netWidestLines.0.dropFirst()) as NSString).size(withAttributes: a).width
@@ -77,18 +79,16 @@ enum StatusRenderer {
             let adjust = (lh - box) / 2
             (bottom as NSString).draw(at: NSPoint(x: x, y: blockBottom + adjust), withAttributes: attrs)
             (top as NSString).draw(at: NSPoint(x: x, y: blockBottom + lh + adjust), withAttributes: attrs)
-            if let (up, down) = net {   // 第三列：上行在上、下行在下，右对齐定宽
-                // 箭头贴第三列左缘（上下对齐），数字贴右缘右对齐
-                let right = size.width - CGFloat(L.sidePadding)
-                let left = right - CGFloat(netColumnWidth)
+            if let (up, down) = net {   // v0.1.7：网速列紧跟本次第二列实际最宽行的右缘 3pt，箭头 1pt 数字，一体左对齐；多余空白留在最右
+                let memW = max((top as NSString).size(withAttributes: attrs).width, (bottom as NSString).size(withAttributes: attrs).width)
+                let nx = x + memW + CGFloat(L.columnGap)
                 let rows: [(String, CGFloat, Bool)] = [(down, blockBottom, false), (up, blockBottom + lh, true)]
                 for (text, y, isUp) in rows {
                     let num = String(text.drop(while: { $0 == "↑" || $0 == "↓" }))
-                    let w = (num as NSString).size(withAttributes: attrs).width
-                    (num as NSString).draw(at: NSPoint(x: right - w, y: y + adjust), withAttributes: attrs)
-                    let midY = y + adjust - font.descender + font.capHeight / 2
-                    drawArrow(up: isUp, x: left, midY: midY, ink: ink)
+                    (num as NSString).draw(at: NSPoint(x: nx + arrowWidth + arrowGap, y: y + adjust), withAttributes: attrs)
+                    drawArrow(up: isUp, x: nx, midY: y + adjust - font.descender + font.capHeight / 2, ink: ink)
                 }
+                lastGaps = (Double(L.gap), Double(L.columnGap), Double(arrowGap), Double(size.width - (nx + arrowWidth + arrowGap + max((String(up.dropFirst()) as NSString).size(withAttributes: attrs).width, (String(down.dropFirst()) as NSString).size(withAttributes: attrs).width))))
             }
             return true
         }

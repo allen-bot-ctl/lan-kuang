@@ -56,6 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent(name.replacingOccurrences(of: "icon2x", with: "icon1x")))
                 print("DEBUG_ICON \(name) width=\(img.size.width)")
             }
+            // v0.1.7 S1/S2/S3：最长与短值各一组，打印实际间距和整项宽
+            for (tag, t, b, n) in [("longest", "128G", "100%", netWidestLines), ("short", "13G", "89%", ("↑32K", "↓248K"))] {
+                let img = StatusRenderer.image(battery: batteryGlyphSpec(parseDebugBattery("charging,18")!), top: t, bottom: b, height: 24, net: n)
+                try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent("spacing1x-\(tag).png"))
+                try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent("spacing2x-\(tag).png"))
+                let g = StatusRenderer.lastGaps
+                print("DEBUG_SPACING \(tag) width=\(img.size.width) battery_text=\(g.0) text_arrow=\(g.1) arrow_num=\(g.2) right_slack=\(String(format: "%.1f", g.3))")
+            }
             let variants: [(String, CGFloat, NSFont.Width)] = [("std10", 10, .standard), ("std9.5", 9.5, .standard),
                 ("std9", 9, .standard), ("cond10", 10, .condensed), ("cond9.5", 9.5, .condensed)]
             for (tag, size, w) in variants {
