@@ -5,3 +5,4 @@ vendor/
 *.xcodeproj/
 .DS_Store
 .swiftpm/
+__pycache__/
