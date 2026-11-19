@@ -74,7 +74,7 @@ public func parseDebugBattery(_ arg: String) -> BatteryState?? {
 /// 单项菜单栏布局（点）。v0.1.3 起电池竖放：总宽 = 左边距 + [电池宽 + 间距] + 文字列宽 + 右边距。
 /// 竖电池总高 16pt：本体 11×14pt（圆角 2、描边 1 不透明），正极头 5×1.6pt 在顶部居中、间隔 0.4pt；填充区 8×10pt，从下往上。
 public enum StatusItemLayout {
-    public static let sidePadding: Double = 2
+    public static let sidePadding: Double = 0
     public static let glyphWidth: Double = 11
     public static let bodyHeight: Double = 14
     public static let capWidth: Double = 5
