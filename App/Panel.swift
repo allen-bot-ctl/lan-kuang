@@ -461,7 +461,7 @@ final class HoverPanel: NSPanel {
         else if e.phase.contains(.changed) { phase = .changed }
         else if e.phase.contains(.ended) || e.phase.contains(.cancelled) { phase = .ended }
         else { phase = .none }
-        scroll(dx: -Double(e.scrollingDeltaX), dy: -Double(e.scrollingDeltaY), phase: phase, now: e.timestamp)
+        scroll(dx: -Double(e.scrollingDeltaX), dy: -Double(e.scrollingDeltaY), phase: phase, now: ProcessInfo.processInfo.systemUptime)  // 合成事件的 timestamp 为 0，统一用当前时钟
     }
 
     /// 合成事件走真实入口：托管视图的 scrollWheel。
