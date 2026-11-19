@@ -245,7 +245,7 @@ final class NetworkTests: XCTestCase {
         let r = netRate(previous: p, current: c, seconds: 2)
         XCTAssertEqual(r.down, 21_189_033.0 / 2, accuracy: 0.01)
         let back = netRate(previous: c, current: p, seconds: 2)
-        XCTAssertEqual(back, NetRate(up: 0, down: 0))
+        XCTAssertEqual(back, NetRate(up: 0, down: 2495))   // 只有 en0 增长 4990B，en7 回退记 0
     }
     func testShort() {
         XCTAssertEqual(formatRateShort(0), "0B")
