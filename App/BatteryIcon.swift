@@ -6,15 +6,21 @@ enum StatusRenderer {
     typealias L = StatusItemLayout
 
     /// 10pt semibold 标准宽度 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
-    static let font: NSFont = {
-        let size = CGFloat(L.fontSize)
-        let base = NSFont.systemFont(ofSize: size, weight: .semibold)
+    /// 调试用：离屏对比不同字号/字宽（仅 --debug-render-icons 设置）。
+    static var fontOverride: (CGFloat, NSFont.Width)? = nil { didSet { cachedFont = nil } }
+    private static var cachedFont: NSFont?
+    static var font: NSFont {
+        if let f = cachedFont { return f }
+        let size = fontOverride?.0 ?? CGFloat(L.fontSize)
+        let base = NSFont.systemFont(ofSize: size, weight: .semibold, width: fontOverride?.1 ?? .standard)
         let desc = base.fontDescriptor.addingAttributes([
             .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: 6,
                                 NSFontDescriptor.FeatureKey.selectorIdentifier: 0]]
         ])
-        return NSFont(descriptor: desc, size: size) ?? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
-    }()
+        let f = NSFont(descriptor: desc, size: size) ?? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
+        cachedFont = f
+        return f
+    }
 
     /// 按最长文案得到的文字列宽。
     static var textColumnWidth: Double {

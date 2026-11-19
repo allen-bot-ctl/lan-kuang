@@ -53,6 +53,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent(name.replacingOccurrences(of: "icon2x", with: "icon1x")))
                 print("DEBUG_ICON \(name) width=\(img.size.width)")
             }
+            let variants: [(String, CGFloat, NSFont.Width)] = [("std10", 10, .standard), ("std9.5", 9.5, .standard),
+                ("std9", 9, .standard), ("cond10", 10, .condensed), ("cond9.5", 9.5, .condensed)]
+            for (tag, size, w) in variants {
+                StatusRenderer.fontOverride = (size, w)
+                for c in ["ac-100", "charging-18"] {
+                    let st = parseDebugBattery(c.replacingOccurrences(of: "-", with: ","))!
+                    let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "128G", bottom: "100%", height: 24)
+                    try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent("font1x-\(tag)-\(c).png"))
+                    try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent("font2x-\(tag)-\(c).png"))
+                    if c == "ac-100" { print("DEBUG_FONT \(tag) item_width=\(img.size.width) text=\(StatusRenderer.textColumnWidth)") }
+                }
+            }
             exit(0)
         }
         let idBase = Bundle.main.bundleIdentifier ?? "app"
