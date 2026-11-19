@@ -296,8 +296,20 @@ final class CardsTests: XCTestCase {
     }
     func testContextMenuAndHeight() {
         XCTAssertEqual(contextMenuTitles(displayName: "栏况"), ["检查更新…", "设置中心…", "退出栏况"])
-        XCTAssertEqual(CardLayout.overviewHeight(rows: 5), 170)
-        XCTAssertEqual(CardLayout.overviewHeight(rows: 4), 144)
+        XCTAssertEqual(CardLayout.overviewHeight(rows: 5), 146 + 30)
+        XCTAssertEqual(CardLayout.overviewHeight(rows: 4), 120 + 30)
+    }
+    func testSettingsCardNotPagedAndBackToOverview() {
+        XCTAssertFalse(cardIDs(hasBattery: true).contains("settings"))
+        var p = CardPager(count: 6)
+        p.scroll(dx: 0, dy: 3, phase: .none, now: 0); p.scroll(dx: 0, dy: 3, phase: .none, now: 1)
+        XCTAssertEqual(p.index, 2)
+        p.openSettings()
+        XCTAssertFalse(p.scroll(dx: 0, dy: 3, phase: .none, now: 5))
+        XCTAssertFalse(p.scroll(dx: 50, dy: 0, phase: .began, now: 6))
+        p.closeSettings()
+        XCTAssertEqual(p.index, 0)
+        XCTAssertTrue(p.scroll(dx: 0, dy: 3, phase: .none, now: 10))
     }
     func testSplitRate() {
         let r = splitRate(205); XCTAssertEqual(r.number, "205"); XCTAssertEqual(r.unit, "B/s")
