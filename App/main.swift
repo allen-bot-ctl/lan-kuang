@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import ServiceManagement
 import IOKit.ps
 #if canImport(Sparkle)
