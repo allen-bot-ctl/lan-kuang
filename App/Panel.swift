@@ -15,6 +15,12 @@ final class PanelModel: ObservableObject {
     var debugLongest = false
     // v0.1.12 卡片
     @Published var page = 0
+    // v0.1.14 设置卡（隐藏卡，不进翻页和页码点）
+    @Published var showSettings = false
+    @Published var loginEnabled = false
+    var version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "—"
+    var onToggleLogin: ((Bool) -> Void)?
+    var onCheckUpdates: (() -> Void)?
     @Published var cpuSplitNow = CPUSplit(system: 0, user: 0, idle: 100)
     @Published var cpuHistory = History<CPUSplit>()
     @Published var memHistory = History<Double>()
@@ -84,10 +90,33 @@ struct Row: View {
     }
 }
 
+/// 总览标题行右侧的「⚙ 设置」（图标 + 文字，参照栏历）。
+struct SettingsEntry: View {
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: "gearshape").font(.system(size: 11, weight: .medium))
+                Text("设置").font(.system(size: 12))
+            }
+            .foregroundColor(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct OverviewCard: View {
     @ObservedObject var model: PanelModel
     var body: some View {
         VStack(spacing: 4) {
+            HStack {
+                Text("总览").font(.system(size: 13, weight: .semibold))
+                Spacer(minLength: 8)
+                SettingsEntry { model.showSettings = true }
+            }
+            .frame(height: CardLayout.headerHeight)
+            .padding(.bottom, CardLayout.headerGap - 4)
             Row(id: "mem", label: "内存",
                 value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib),
                 percent: percentOf(used: model.memUsed, total: model.memTotal))
@@ -369,16 +398,21 @@ struct PanelView: View {
         let h = CardLayout.overviewHeight(rows: cards.count - 1)
         let w = PanelLayout.width
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(cards, id: \.self) { id in
-                    card(id).frame(width: w, height: h, alignment: .top)
+            if model.showSettings {
+                SettingsCard(model: model).frame(width: w, height: h, alignment: .top)
+                PageDots(count: cards.count, index: model.page).hidden()   // 设置卡不算页，只占位保持面板尺寸
+            } else {
+                HStack(spacing: 0) {
+                    ForEach(cards, id: \.self) { id in
+                        card(id).frame(width: w, height: h, alignment: .top)
+                    }
                 }
+                .offset(x: -CGFloat(min(model.page, cards.count - 1)) * w)
+                .animation(.easeInOut(duration: CardLayout.animation), value: model.page)
+                .frame(width: w, height: h, alignment: .leading)
+                .clipped()
+                PageDots(count: cards.count, index: model.page)
             }
-            .offset(x: -CGFloat(min(model.page, cards.count - 1)) * w)
-            .animation(.easeInOut(duration: CardLayout.animation), value: model.page)
-            .frame(width: w, height: h, alignment: .leading)
-            .clipped()
-            PageDots(count: cards.count, index: model.page)
         }
         .frame(width: w)
     }
@@ -395,10 +429,64 @@ struct PanelView: View {
     }
 }
 
+/// v0.1.14 设置卡：左上「‹ 返回」，内容可垂直滚动；只放开机启动、检查更新、版本号。
+struct SettingsCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack {
+                Button { model.showSettings = false } label: {
+                    Text("‹ 返回").font(.system(size: 12)).foregroundColor(.accentColor).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                Text("设置").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text("‹ 返回").font(.system(size: 12)).hidden()
+            }
+            .frame(height: CardLayout.headerHeight)
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("开机启动")
+                        Spacer()
+                        Toggle("", isOn: Binding(get: { model.loginEnabled },
+                                                 set: { model.loginEnabled = $0; model.onToggleLogin?($0) }))
+                            .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                    }
+                    .frame(height: 30)
+                    Divider()
+                    HStack {
+                        Text("软件更新")
+                        Spacer()
+                        Button("检查更新…") { model.onCheckUpdates?() }.controlSize(.small)
+                    }
+                    .frame(height: 30)
+                    Divider()
+                    HStack {
+                        Text("当前版本")
+                        Spacer()
+                        Text(model.version).monospacedDigit().foregroundColor(.secondary)
+                    }
+                    .frame(height: 30)
+                }
+                .font(.system(size: 13))
+            }
+        }
+        .padding(.horizontal, PanelLayout.horizontalPadding)
+        .padding(.vertical, 10)
+    }
+}
+
 /// 吃掉面板上的滚动事件（不传给下面），交给翻页逻辑。
 final class PanelHostingView: NSHostingView<PanelView> {
     var onScroll: ((NSEvent) -> Void)?
-    override func scrollWheel(with event: NSEvent) { onScroll?(event) }
+    var passThroughScroll: (() -> Bool)?
+    override func scrollWheel(with event: NSEvent) {
+        if passThroughScroll?() == true { super.scrollWheel(with: event) }   // 设置卡：交给 ScrollView 垂直滚动
+        else { onScroll?(event) }
+    }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }   // 不抢焦点的面板里按钮一次点中
 }
 
 /// 鼠标进出转发器（状态栏按钮与面板各一个）。
@@ -451,6 +539,7 @@ final class HoverPanel: NSPanel {
         contentView = effect
         setContentSize(host.fittingSize)
         host.onScroll = { [weak self] e in self?.handleScroll(e) }
+        host.passThroughScroll = { [weak model] in model?.showSettings == true }
     }
 
     /// 翻页：触控板横滑（有 phase）、鼠标滚轮竖滚（无 phase）。scrollingDelta 取反后正数 = 下一张。
@@ -477,7 +566,7 @@ final class HoverPanel: NSPanel {
         pager.reset()
         for _ in 0..<i { _ = pager.scroll(dx: 0, dy: 1, phase: .none, now: Double(pager.index) * 10) }
         var t = Transaction(); t.disablesAnimations = true
-        withTransaction(t) { model.page = pager.index }
+        withTransaction(t) { model.page = pager.index; model.showSettings = false }
     }
     override var canBecomeKey: Bool { false }
 

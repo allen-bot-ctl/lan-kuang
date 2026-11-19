@@ -8,8 +8,13 @@ public enum CardLayout {
     public static let dotAreaHeight: Double = 14
     public static let dotBottomPadding: Double = 6
     public static let animation: Double = 0.25
-    /// 总览高度：行数 × 22 + 行间距 4 + 上下各 10。所有卡片同高。
-    public static func overviewHeight(rows: Int) -> Double { Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + 20 }
+    /// v0.1.14：总览加标题行（18pt，下方 6pt 间距），与其他卡片一致。
+    public static let headerHeight: Double = 18
+    public static let headerGap: Double = 6
+    /// 总览高度：标题行 + 间距 + 行数 × 22 + 行间距 4 + 上下各 10。所有卡片（含设置卡）同高。
+    public static func overviewHeight(rows: Int) -> Double {
+        headerHeight + headerGap + Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + 20
+    }
 }
 
 /// 卡片顺序：总览永远第一，没有电池不出电池卡。
@@ -110,3 +115,6 @@ public func splitRate(_ bytesPerSecond: Double) -> (number: String, unit: String
     guard let i = s.firstIndex(of: " ") else { return (s, "") }
     return (String(s[..<i]), String(s[s.index(after: i)...]))
 }
+
+/// v0.1.14 右键菜单：只留三项（检查更新、设置中心、退出）。
+public func contextMenuTitles(displayName: String) -> [String] { ["检查更新…", "设置中心…", "退出" + displayName] }
