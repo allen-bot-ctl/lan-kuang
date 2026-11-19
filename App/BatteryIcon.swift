@@ -52,7 +52,7 @@ enum StatusRenderer {
         return img
     }
 
-    /// 竖电池（v0.1.3）：本体 10×15 圆角 2（含正极头总高 17.2）、1.5pt 描边不透明；正极头朝上；填充区 5×10 从下往上。
+    /// 竖电池（v0.1.3）：本体 11×14 圆角 2（含正极头总高 16）、1pt 描边不透明；正极头朝上；填充区 8×10 从下往上。
     /// 接电时在填充上叠实心 ⚡，外圈先用 .clear 挖出 1pt 的空隙，满格时轮廓仍清楚。
     private static func drawBattery(_ spec: BatteryIconSpec, origin o: NSPoint, ink: NSColor) {
         let bw = CGFloat(L.glyphWidth), bh = CGFloat(L.bodyHeight)
@@ -78,9 +78,9 @@ enum StatusRenderer {
         if spec.bolt { drawBolt(center: NSPoint(x: outer.midX, y: outer.midY), ink: ink) }
     }
 
-    /// ⚡ 约 3.6×9pt：先描 1pt 的 .clear 外圈（只在本体内部挖），再实心填充。
+    /// ⚡ 约 4.5×8pt：先描 1pt 的 .clear 外圈（只在本体内部挖），再实心填充。
     private static func drawBolt(center c: NSPoint, ink: NSColor) {
-        let w: CGFloat = 3.6, h: CGFloat = 9
+        let w: CGFloat = 4.5, h: CGFloat = 8
         let x0 = c.x - w / 2, y0 = c.y - h / 2
         let p = NSBezierPath()
         p.move(to: NSPoint(x: x0 + w * 0.70, y: y0 + h))          // 上尖

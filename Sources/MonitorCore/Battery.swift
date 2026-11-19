@@ -72,22 +72,22 @@ public func parseDebugBattery(_ arg: String) -> BatteryState?? {
 }
 
 /// 单项菜单栏布局（点）。v0.1.3 起电池竖放：总宽 = 左边距 + [电池宽 + 间距] + 文字列宽 + 右边距。
-/// 竖电池总高 17.2pt：本体 10×15pt（圆角 2、描边 1.5），正极头 4×1.8pt 在顶部居中、间隔 0.4pt；填充区 5×10pt，从下往上。
+/// 竖电池总高 16pt：本体 11×14pt（圆角 2、描边 1 不透明），正极头 5×1.6pt 在顶部居中、间隔 0.4pt；填充区 8×10pt，从下往上。
 public enum StatusItemLayout {
     public static let sidePadding: Double = 2
-    public static let glyphWidth: Double = 10
-    public static let bodyHeight: Double = 15
-    public static let capWidth: Double = 4
-    public static let capHeight: Double = 1.8
+    public static let glyphWidth: Double = 11
+    public static let bodyHeight: Double = 14
+    public static let capWidth: Double = 5
+    public static let capHeight: Double = 1.6
     public static let capGap: Double = 0.4
     public static var glyphHeight: Double { bodyHeight + capGap + capHeight }
-    public static let strokeWidth: Double = 1.5
-    public static let fillWidth: Double = 5
+    public static let strokeWidth: Double = 1
+    public static let fillWidth: Double = 8
     public static let fillMaxHeight: Double = 10
     public static let gap: Double = 4
     public static let fontSize: Double = 10
     public static let lineHeight: Double = 10.5
-    public static let maxWidth: Double = 46
+    public static let maxWidth: Double = 44
     public static let widestLines = ("128G", "100%")
 
     public static func width(textColumn: Double, hasBattery: Bool) -> Double {

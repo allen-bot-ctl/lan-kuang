@@ -213,9 +213,9 @@ final class SingleItemTests: XCTestCase {
         XCTAssertNil(parseDebugBattery("battery"))
     }
     func testWidthBudget() {
-        // v0.1.3 竖电池：文字列 23pt 时带电池总宽 41pt（≤ 46pt 上限）
-        XCTAssertEqual(StatusItemLayout.maxWidth, 46)
-        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 41)
+        // v0.1.3 竖电池：文字列 23pt 时带电池总宽 42pt（≤ 44pt 上限）
+        XCTAssertEqual(StatusItemLayout.maxWidth, 44)
+        XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: true), 42)
         XCTAssertEqual(StatusItemLayout.width(textColumn: 23, hasBattery: false), 27)
     }
     func testVerticalFill() {
@@ -223,6 +223,6 @@ final class SingleItemTests: XCTestCase {
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 100, isCharging: false, onAC: true)).fillHeight, 10, accuracy: 1e-9)
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 1, isCharging: false, onAC: false)).fillHeight, 1, accuracy: 1e-9)
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 0, isCharging: false, onAC: false)).fillHeight, 0)
-        XCTAssertEqual(StatusItemLayout.glyphHeight, 17.2, accuracy: 1e-9)
+        XCTAssertEqual(StatusItemLayout.glyphHeight, 16, accuracy: 1e-9)
     }
 }
