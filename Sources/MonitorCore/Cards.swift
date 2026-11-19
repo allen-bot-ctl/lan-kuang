@@ -24,6 +24,12 @@ public func cardIDs(hasBattery: Bool) -> [String] {
 }
 
 /// 定长历史：最多 capacity 个点，超出丢最旧。
+/// 曲线横向步长：点数不满容量时按已有点数铺满整个宽度，满了就是固定窗口滚动。
+public func chartStep(width: Double, count: Int, capacity: Int = CardLayout.historyCapacity) -> Double {
+    let n = min(count, capacity)
+    return n > 1 ? width / Double(n - 1) : width
+}
+
 public struct History<T>: Sequence {
     public private(set) var values: [T] = []
     public let capacity: Int

@@ -348,4 +348,11 @@ final class CardsTests: XCTestCase {
         p.reset(); XCTAssertEqual(p.index, 0)
     }
 
+
+    func testChartStepFillsWidthBeforeFull() {
+        XCTAssertEqual(chartStep(width: 238, count: 2), 238)
+        XCTAssertEqual(chartStep(width: 238, count: 3), 119)
+        XCTAssertEqual(chartStep(width: 238, count: 120), 238.0 / 119, accuracy: 1e-9)
+        XCTAssertEqual(chartStep(width: 238, count: 1), 238)
+    }
 }

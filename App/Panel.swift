@@ -198,10 +198,9 @@ struct Chart: View {
     let colors: [Color]
     var body: some View {
         GeometryReader { g in
-            let cap = Double(CardLayout.historyCapacity)
             let w = g.size.width, h = g.size.height
             let n = layers.first?.count ?? 0
-            let step = w / (cap - 1)
+            let step = chartStep(width: w, count: n)   // 未满时已有点铺满宽度（0.1.16）
             let x0 = w - Double(max(0, n - 1)) * step
             ZStack {
                 RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06))
