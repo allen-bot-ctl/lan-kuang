@@ -14,7 +14,7 @@ public enum CardLayout {
     public static let overviewBottomGap: Double = 6  // 最后一行到页码点
     /// 总览高度：标题行 + 间距 + 行数 × 22 + 行间距 4 + 上下各 10。所有卡片（含设置卡）同高。
     public static func overviewHeight(rows: Int) -> Double {
-        10 + headerHeight + headerGap + Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + overviewBottomGap   // 0.1.13 高度 + 30
+        Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + 20 + 30   // 契约 C1：0.1.13 高度 + 30pt，内容顶对齐
     }
 }
 
