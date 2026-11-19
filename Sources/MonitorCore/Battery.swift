@@ -8,21 +8,24 @@ public struct BatteryState: Equatable {
     }
 }
 
-public enum BatteryOverlay: Equatable { case bolt, plug, none }
 
-/// 菜单栏电池图标的绘制参数：按电量填充；充电叠 ⚡，接电源未充电叠插头，用电池不叠；用电池且 ≤20% 填充变红。
+/// 菜单栏电池图标的绘制参数：按电量从下往上填充；接电（充电中或已接电源）叠 ⚡，用电池不叠；用电池且 ≤20% 填充变红。
 public struct BatteryIconSpec: Equatable {
     public var fillFraction: Double
-    public var overlay: BatteryOverlay
+    public var bolt: Bool
     public var isLowRed: Bool
+    /// 竖电池填充高度（点）：最高 StatusItemLayout.fillMaxHeight，电量 > 0 时至少 1pt。
+    public var fillHeight: Double {
+        guard fillFraction > 0 else { return 0 }
+        return max(1, StatusItemLayout.fillMaxHeight * fillFraction)
+    }
 }
 
 public let batteryLowThreshold = 20
 
 public func batteryIconSpec(_ s: BatteryState) -> BatteryIconSpec {
     let p = clampPercent(s.percent)
-    let overlay: BatteryOverlay = s.isCharging ? .bolt : (s.onAC ? .plug : .none)
-    return BatteryIconSpec(fillFraction: Double(p) / 100, overlay: overlay,
+    return BatteryIconSpec(fillFraction: Double(p) / 100, bolt: s.isCharging || s.onAC,
                            isLowRed: !s.onAC && !s.isCharging && p <= batteryLowThreshold)
 }
 
@@ -68,20 +71,26 @@ public func parseDebugBattery(_ arg: String) -> BatteryState?? {
     }
 }
 
-/// 单项菜单栏布局（点）。总宽 = 左边距 + [电池 + 正极头 + 间距] + 文字列宽 + 右边距。
+/// 单项菜单栏布局（点）。v0.1.3 起电池竖放：总宽 = 左边距 + [电池宽 + 间距] + 文字列宽 + 右边距。
+/// 竖电池本体 8×16pt（圆角 2、描边 1），正极头 4×1.6pt 在顶部居中、间隔 0.3pt；填充区 5×13pt，从下往上。
 public enum StatusItemLayout {
     public static let sidePadding: Double = 2
-    public static let glyphWidth: Double = 18
-    public static let glyphHeight: Double = 9
-    public static let capWidth: Double = 1.5
-    public static let gap: Double = 2
+    public static let glyphWidth: Double = 8
+    public static let bodyHeight: Double = 16
+    public static let capWidth: Double = 4
+    public static let capHeight: Double = 1.6
+    public static let capGap: Double = 0.3
+    public static var glyphHeight: Double { bodyHeight + capGap + capHeight }
+    public static let fillWidth: Double = 5
+    public static let fillMaxHeight: Double = 13
+    public static let gap: Double = 3
     public static let fontSize: Double = 9
     public static let lineHeight: Double = 10
-    public static let maxWidth: Double = 52
+    public static let maxWidth: Double = 44
     public static let widestLines = ("128G", "100%")
 
     public static func width(textColumn: Double, hasBattery: Bool) -> Double {
-        let battery = hasBattery ? glyphWidth + capWidth + gap : 0
+        let battery = hasBattery ? glyphWidth + gap : 0
         return (sidePadding * 2 + battery + textColumn).rounded(.up)
     }
 }

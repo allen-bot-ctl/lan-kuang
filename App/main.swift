@@ -40,6 +40,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        // `--debug-render-icons=<目录>`：离屏 2x 渲染五种电池状态的菜单栏图像后退出（CI V1）。
+        if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-render-icons=") }) {
+            let dir = URL(fileURLWithPath: String(arg.dropFirst("--debug-render-icons=".count)))
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let cases = ["ac,100", "charging,45", "battery,62", "battery,15", "none"]
+            for c in cases {
+                guard let st = parseDebugBattery(c) else { continue }
+                let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "128G", bottom: "100%", height: 24)
+                let name = "icon2x-" + c.replacingOccurrences(of: ",", with: "-") + ".png"
+                try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent(name))
+                print("DEBUG_ICON \(name) width=\(img.size.width)")
+            }
+            exit(0)
+        }
         let idBase = Bundle.main.bundleIdentifier ?? "app"
         // 只有一个菜单栏项；新的 autosaveName，避免与 0.1.0/0.1.1 两项的位置冲突。
         statsItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -248,7 +262,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statsItem.length = img.size.width
         b.image = img
         b.title = ""
-        b.toolTip = batteryMenuLine(battery)
     }
 
     private func resume() {

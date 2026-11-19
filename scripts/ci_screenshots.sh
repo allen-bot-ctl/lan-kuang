@@ -42,7 +42,7 @@ shoot() {  # $1=后缀  其余=启动参数
   mb=$(awk '/^DEBUG_RECT_MENUBAR/{print $2}' "$log")
   it=$(awk '/^DEBUG_RECT_ITEM/{print $2}' "$log")
   w=$(awk '/^DEBUG_ITEM_WIDTH/{print $2}' "$log")
-  awk -v w="$w" 'BEGIN{exit !(w != "" && w+0 > 0 && w+0 <= 52)}' || { kill -TERM "$pid" || true; echo "::error::菜单栏项宽 ${w}pt 超过 52pt"; return 1; }
+  awk -v w="$w" 'BEGIN{exit !(w != "" && w+0 > 0 && w+0 <= 44)}' || { kill -TERM "$pid" || true; echo "::error::菜单栏项宽 ${w}pt 超过 44pt"; return 1; }
   echo "RELEASE: item_width${tag}=${w}pt"
   pn=$(awk '/^DEBUG_RECT_PANEL/{print $2}' "$log")
   [ -n "$mb" ] && [ -n "$pn" ] || { kill -TERM "$pid" || true; echo "::error::应用没有输出截图区域"; return 1; }
@@ -60,7 +60,10 @@ shoot() {  # $1=后缀  其余=启动参数
 
 shoot "" --debug-open-panel
 shoot "-longest" --debug-open-panel --debug-longest --debug-battery=ac,100
-for st in charging,18 ac,100 battery,18 battery,3 none; do
+"$bin" --debug-render-icons="$PWD/shots" | tee /tmp/shots-icons.log
+ls shots/icon2x-*.png | wc -l | awk '{exit !($1==5)}' || { echo "::error::2x 图标没有渲染满 5 张"; exit 1; }
+for f in shots/icon2x-*.png; do sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' '; echo; done
+for st in ac,100 charging,45 battery,62 battery,15 none; do
   shoot "-bat-${st%%,*}-${st#*,}" --debug-open-panel --debug-battery="$st"
 done
 grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
