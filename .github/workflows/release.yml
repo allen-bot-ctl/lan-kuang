@@ -148,3 +148,14 @@ jobs:
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait until public feed serves this version
+        run: |
+          ver="${TAG#v}"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/appcast.xml"
+          for i in $(seq 1 60); do
+            got=$(curl -fsSL -H 'Cache-Control: no-cache' "$url" | sed -n 's:.*<sparkle\:shortVersionString>\([^<]*\)<.*:\1:p' | head -n1)
+            if [ "$got" = "$ver" ]; then echo "RELEASE: feed_ready=$ver after ${i}x5s"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::5 分钟内更新源仍未返回 $ver（最后一次: $got）"; exit 1
