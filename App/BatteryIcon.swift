@@ -52,8 +52,8 @@ enum StatusRenderer {
         return img
     }
 
-    /// 竖电池（v0.1.3）：本体 8×16 圆角 2、1pt 描边 60% 不透明；正极头朝上；填充区 5×13 从下往上。
-    /// 接电时在填充上叠实心 ⚡，外圈先用 .clear 挖出 1.4pt 的空隙，满格时轮廓仍清楚。
+    /// 竖电池（v0.1.3）：本体 8×13 圆角 2（含正极头总高 15）、1pt 描边 60% 不透明；正极头朝上；填充区 5×10 从下往上。
+    /// 接电时在填充上叠实心 ⚡，外圈先用 .clear 挖出 1pt 的空隙，满格时轮廓仍清楚。
     private static func drawBattery(_ spec: BatteryIconSpec, origin o: NSPoint, ink: NSColor) {
         let bw = CGFloat(L.glyphWidth), bh = CGFloat(L.bodyHeight)
         let outer = NSRect(x: o.x, y: o.y, width: bw, height: bh)
@@ -77,9 +77,9 @@ enum StatusRenderer {
         if spec.bolt { drawBolt(center: NSPoint(x: outer.midX, y: outer.midY), ink: ink) }
     }
 
-    /// ⚡ 约 3.8×10pt：先描 1.4pt 的 .clear 外圈（只在本体内部挖），再实心填充。
+    /// ⚡ 约 3.4×8pt：先描 1pt 的 .clear 外圈（只在本体内部挖），再实心填充。
     private static func drawBolt(center c: NSPoint, ink: NSColor) {
-        let w: CGFloat = 3.8, h: CGFloat = 10
+        let w: CGFloat = 3.4, h: CGFloat = 8
         let x0 = c.x - w / 2, y0 = c.y - h / 2
         let p = NSBezierPath()
         p.move(to: NSPoint(x: x0 + w * 0.70, y: y0 + h))          // 上尖
@@ -96,7 +96,7 @@ enum StatusRenderer {
                           width: CGFloat(L.fillWidth) + 1, height: CGFloat(L.fillMaxHeight) + 1)
         NSBezierPath(rect: clip).addClip()
         ctx.compositingOperation = .clear
-        p.lineWidth = 2.8   // 描边居中，外扩 1.4pt
+        p.lineWidth = 2   // 描边居中，外扩 1pt（填充区只有 5pt 宽，1.4pt 会把 45% 的电量挖没）
         NSColor.black.setStroke()
         p.stroke()
         ctx.restoreGraphicsState()
