@@ -54,6 +54,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let a = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-appearance=") }) {
             NSApp.appearance = NSAppearance(named: a.hasSuffix("light") ? .aqua : .darkAqua)
         }
+        // `--debug-render-cards=<目录>`：离屏渲染每张卡片（深/浅各一套 2x）后退出，CI 与本机核对用。
+        if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-render-cards=") }) {
+            let dir = URL(fileURLWithPath: String(arg.dropFirst("--debug-render-cards=".count)))
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let m = PanelModel()
+            m.memUsed = UInt64(13.4 * Units.gib); m.memTotal = UInt64(16 * Units.gib); m.memCached = UInt64(4.2 * Units.gib)
+            m.swapUsed = UInt64(1.1 * Units.gib); m.cpu = 23; m.cpuSplitNow = CPUSplit(system: 8.5, user: 14.5, idle: 77)
+            m.disk = DiskUsage(total: 500_000_000_000, available: 180_000_000_000)
+            m.net = NetRate(up: 6.4 * 1024, down: 999 * 1024)
+            m.battery = parseDebugBattery("charging,62") ?? nil
+            var ch = History<CPUSplit>(), mh = History<Double>()
+            for i in 0..<120 { let t = Double(i) / 9
+                ch.append(CPUSplit(system: 6 + 4 * sin(t), user: 14 + 10 * sin(t * 1.7 + 1), idle: 0)); mh.append(80 + 3 * sin(t / 2)) }
+            m.cpuHistory = ch; m.memHistory = mh
+            for ap in ["dark", "light"] {
+                let appearance = NSAppearance(named: ap == "dark" ? .darkAqua : .aqua)!
+                for pg in 0..<m.cards.count {
+                    m.page = pg
+                    appearance.performAsCurrentDrawingAppearance {
+                        let v = PanelView(model: m).background(Color(nsColor: .windowBackgroundColor))
+                            .environment(\.colorScheme, ap == "dark" ? .dark : .light)
+                        let r = ImageRenderer(content: v); r.scale = 2
+                        if let cg = r.cgImage {
+                            let rep = NSBitmapImageRep(cgImage: cg)
+                            try? rep.representation(using: .png, properties: [:])?.write(to: dir.appendingPathComponent("card\(pg)-\(ap).png"))
+                        }
+                    }
+                }
+            }
+            print("DEBUG_CARDS rendered=\(m.cards.count * 2)")
+            exit(0)
+        }
         // `--debug-render-icons=<目录>`：离屏 2x 渲染五种电池状态的菜单栏图像后退出（CI V1）。
         if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-render-icons=") }) {
             let dir = URL(fileURLWithPath: String(arg.dropFirst("--debug-render-icons=".count)))
