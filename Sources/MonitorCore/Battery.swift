@@ -71,10 +71,10 @@ public func parseDebugBattery(_ arg: String) -> BatteryState?? {
 /// 单项菜单栏布局（点）。总宽 = 左边距 + [电池 + 正极头 + 间距] + 文字列宽 + 右边距。
 public enum StatusItemLayout {
     public static let sidePadding: Double = 2
-    public static let glyphWidth: Double = 20
-    public static let glyphHeight: Double = 10
+    public static let glyphWidth: Double = 18
+    public static let glyphHeight: Double = 9
     public static let capWidth: Double = 1.5
-    public static let gap: Double = 3
+    public static let gap: Double = 2
     public static let fontSize: Double = 9
     public static let lineHeight: Double = 10
     public static let maxWidth: Double = 52

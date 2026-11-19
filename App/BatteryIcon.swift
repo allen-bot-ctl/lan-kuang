@@ -5,7 +5,16 @@ import AppKit
 enum StatusRenderer {
     typealias L = StatusItemLayout
 
-    static let font = NSFont.monospacedDigitSystemFont(ofSize: L.fontSize, weight: .semibold)
+    /// 9pt semibold 窄体 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
+    static let font: NSFont = {
+        let size = CGFloat(L.fontSize)
+        let base = NSFont.systemFont(ofSize: size, weight: .semibold, width: .condensed)
+        let desc = base.fontDescriptor.addingAttributes([
+            .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: 6,
+                                NSFontDescriptor.FeatureKey.selectorIdentifier: 0]]
+        ])
+        return NSFont(descriptor: desc, size: size) ?? NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
+    }()
 
     /// 按最长文案得到的文字列宽。
     static var textColumnWidth: Double {
