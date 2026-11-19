@@ -43,6 +43,14 @@ jobs:
       - name: Build universal app, dmg, zip
         run: scripts/build.sh "$VERSION"
 
+      - name: Dry-run appcast (no key) and check
+        run: |
+          DRY_RUN=1 scripts/appcast.sh "$VERSION"
+          scripts/check_appcast.sh dist/appcast.xml
+          # 同时用当前最新的正式发版说明生成一次 HTML，确保转换器能处理
+          latest=$(ls release-notes/v*.md 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$latest" ]; then v=$(basename "$latest" .md); python3 scripts/notes.py html "${v#v}"; fi
+
       - name: Verify archs, signature, bundle
         shell: bash
         run: |

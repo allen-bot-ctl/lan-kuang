@@ -116,25 +116,15 @@ jobs:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: scripts/appcast.sh "$VERSION"
 
+      - name: Check appcast.xml
+        run: scripts/check_appcast.sh dist/appcast.xml
+
       - name: Prepare release notes
         id: notes
         shell: bash
         run: |
           set -euo pipefail
-          NOTES="release-notes/v${VERSION}.md"
-          if [ -f "$NOTES" ]; then
-            cp "$NOTES" "$RUNNER_TEMP/release-notes.md"
-          else
-            cat > "$RUNNER_TEMP/release-notes.md" <<NOTES_EOF
-          ## ${DISPLAY_NAME} ${TAG}
-
-          通用安装包，同时支持 Intel 与 Apple 芯片（macOS 13 及以上）。
-
-          - 下载 \`${NAME}-${VERSION}-mac-universal.dmg\`，打开后把「${DISPLAY_NAME}」拖入「应用程序」。
-          - \`.zip\`、\`.zip.sha256\` 与 \`appcast.xml\` 供应用内「检查更新…」（Sparkle）使用。
-          - 安装包为 ad-hoc 签名，未公证：首次打开请在 Finder 中右键选择「打开」，或到「系统设置 → 隐私与安全性」选择「仍要打开」。
-          NOTES_EOF
-          fi
+          python3 scripts/notes.py md "$VERSION" > "$RUNNER_TEMP/release-notes.md"
           echo "path=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release

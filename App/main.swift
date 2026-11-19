@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hover = HoverTracker()
     private let debouncer = HoverDebouncer(now: { ProcessInfo.processInfo.systemUptime })
     private let debugOpenPanel = CommandLine.arguments.contains("--debug-open-panel")
+    private let debugLongest = CommandLine.arguments.contains("--debug-longest")
 
     private var gate = RefreshGate()
     private var prevTicks: CPUTicks?
@@ -220,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t = Sampler.cpuTicks()
         let cpu = prevTicks.map { cpuPercent(previous: $0, current: t) } ?? 0
         prevTicks = t
+        if debugLongest { statsItem.button?.title = statusTitleWidest; return }   // CI：最长文案定宽检查
         statsItem.button?.title = formatStatusTitle(memoryUsedBytes: Sampler.memoryUsedBytes(), cpuPercent: cpu)
     }
 
