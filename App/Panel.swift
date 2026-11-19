@@ -6,35 +6,59 @@ final class PanelModel: ObservableObject {
     @Published var memTotal: UInt64 = 0
     @Published var cpu: Int = 0
     @Published var disk: DiskUsage?
+    /// 布局自检用，不触发重绘。
+    var frames: [String: CGRect] = [:]
+    /// 调试：固定最长文案（C4 截图与布局自检）。
+    var debugLongest = false
 }
 
 struct Ring: View {
     let fraction: Double
     var body: some View {
         ZStack {
-            Circle().stroke(Color.primary.opacity(0.12), lineWidth: 3)
+            Circle().stroke(Color(nsColor: .separatorColor), lineWidth: PanelLayout.ringLineWidth)
             Circle().trim(from: 0, to: max(0, min(1, fraction)))
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: PanelLayout.ringLineWidth, lineCap: .butt))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 16, height: 16)
+        .padding(PanelLayout.ringLineWidth / 2)
+        .frame(width: PanelLayout.ringDiameter, height: PanelLayout.ringDiameter)
     }
 }
 
-/// 一行：左标签（次要色），右数值（主色、等宽数字），不截断不换行。
-struct Row<Leading: View>: View {
+/// 收集各行标签与数值在面板坐标里的 frame（CI 布局自检用）。
+struct FrameKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { $1 })
+    }
+}
+
+extension View {
+    func reportFrame(_ id: String) -> some View {
+        background(GeometryReader { g in
+            Color.clear.preference(key: FrameKey.self, value: [id: g.frame(in: .named("panel"))])
+        })
+    }
+}
+
+/// 一行：环 · 8pt · 标签（次要色） · 弹性空白 · 数值（主色、等宽数字，不截断不换行）。
+struct Row: View {
+    let id: String
     let label: String
     let value: String
-    @ViewBuilder var leading: Leading
+    let percent: Int
     var body: some View {
-        HStack(spacing: 6) {
-            leading
-            Text(label).foregroundColor(.secondary)
+        HStack(spacing: 0) {
+            Ring(fraction: ringFraction(percent: percent))
+            Spacer().frame(width: PanelLayout.ringLabelGap)
+            Text(label).foregroundColor(.secondary).lineLimit(1).fixedSize().reportFrame(id + ".label")
             Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 13).monospacedDigit())
                 .lineLimit(1)
                 .fixedSize()
+                .reportFrame(id + ".value")
         }
         .font(.system(size: 13))
         .frame(height: 22)
@@ -45,16 +69,19 @@ struct PanelView: View {
     @ObservedObject var model: PanelModel
     var body: some View {
         VStack(spacing: 4) {
-            Row(label: "内存", value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib)) { EmptyView() }
-            Row(label: "CPU", value: formatCPUTitle(percent: model.cpu)) { EmptyView() }
-            Row(label: "磁盘", value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—") {
-                Ring(fraction: Double(model.disk?.percent ?? 0) / 100)
-            }
+            Row(id: "mem", label: "内存",
+                value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib),
+                percent: percentOf(used: model.memUsed, total: model.memTotal))
+            Row(id: "cpu", label: "CPU", value: formatCPUTitle(percent: model.cpu), percent: model.cpu)
+            Row(id: "disk", label: "磁盘",
+                value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—",
+                percent: model.disk?.percent ?? 0)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 12)
+        .padding(.horizontal, PanelLayout.horizontalPadding)
         .padding(.vertical, 10)
-        .frame(width: 260)
+        .frame(width: PanelLayout.width)
+        .coordinateSpace(name: "panel")
+        .onPreferenceChange(FrameKey.self) { model.frames = $0 }
     }
 }
 

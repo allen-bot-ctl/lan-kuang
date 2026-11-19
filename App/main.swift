@@ -68,8 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if debugOpenPanel {   // CI 截图用的隐藏参数：启动 2 秒后打开面板并保持
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 guard let self else { return }
+                self.model.debugLongest = CommandLine.arguments.contains("--debug-longest")
                 self.debouncer.handle(.click)
                 self.applyHoverState()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.printDebugGeometry() }
             }
         }
     }
@@ -170,11 +172,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let p = panelPrevTicks { model.cpu = cpuPercent(previous: p, current: t) }
         else if let p = prevTicks { model.cpu = cpuPercent(previous: p, current: t) }
         panelPrevTicks = t
+        if model.debugLongest {
+            model.memUsed = UInt64(128 * Units.gib); model.memTotal = UInt64(128 * Units.gib); model.cpu = 100
+            return
+        }
         model.memUsed = Sampler.memoryUsedBytes()
         model.memTotal = Sampler.memoryTotalBytes
     }
 
-    private func refreshDisk() { model.disk = Sampler.disk() }
+    private func refreshDisk() {
+        model.disk = model.debugLongest ? DiskUsage(total: 4_000_000_000_000, available: 1_000_000_000) : Sampler.disk()
+    }
+
+    /// CI 用：输出截图区域（左上原点、点）、backingScaleFactor 与面板布局自检。
+    private func printDebugGeometry() {
+        let screenH = NSScreen.screens.first?.frame.height ?? 0
+        func top(_ r: NSRect) -> String {
+            "\(Int(r.minX.rounded(.down))),\(Int((screenH - r.maxY).rounded(.down))),\(Int(r.width.rounded(.up))),\(Int(r.height.rounded(.up)))"
+        }
+        let scale = panel.screen?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        let bf = statsItem.button?.window?.frame ?? .zero
+        let menubar = NSRect(x: bf.minX - 160, y: bf.minY, width: bf.width + 320, height: bf.height)
+        print("DEBUG_SCALE \(scale)")
+        print("DEBUG_RECT_MENUBAR " + top(menubar))
+        print("DEBUG_RECT_PANEL " + top(panel.frame.insetBy(dx: -8, dy: -8)))
+        let f = model.frames
+        let ids = ["mem", "cpu", "disk"]
+        let lmin = ids.map { Double(f[$0 + ".label"]?.minX ?? -1) }
+        let lmax = ids.map { Double(f[$0 + ".label"]?.maxX ?? -1) }
+        let vmin = ids.map { Double(f[$0 + ".value"]?.minX ?? -1) }
+        let vmax = ids.map { Double(f[$0 + ".value"]?.maxX ?? -1) }
+        let ok = layoutAligned(labelMinX: lmin, labelMaxX: lmax, valueMinX: vmin, valueMaxX: vmax)
+        print("DEBUG_LAYOUT labelMinX=\(lmin) valueMaxX=\(vmax) ok=\(ok)")
+        fflush(stdout)
+    }
 
     // MARK: 菜单栏刷新
 

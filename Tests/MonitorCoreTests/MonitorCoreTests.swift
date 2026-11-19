@@ -155,3 +155,35 @@ final class HoverTests: XCTestCase {
         XCTAssertTrue(h.handle(.click)); XCTAssertFalse(h.handle(.click))
     }
 }
+
+final class PanelLayoutTests: XCTestCase {
+    // C2：CPU 环 0% 只显示底色，100% 填满
+    func testRingFraction() {
+        XCTAssertEqual(ringFraction(percent: 0), 0)
+        XCTAssertEqual(ringFraction(percent: 100), 1)
+        XCTAssertEqual(ringFraction(percent: 150), 1)
+        XCTAssertEqual(ringFraction(percent: 41), 0.41, accuracy: 1e-9)
+    }
+    // C1：布局常量下三行标签同一左缘、数值右缘距面板 12pt
+    func testLayoutConstants() {
+        XCTAssertEqual(PanelLayout.labelMinX, 34)
+        XCTAssertEqual(PanelLayout.valueMaxX, 248)
+        XCTAssertEqual(PanelLayout.ringDiameter, 14)
+        XCTAssertEqual(PanelLayout.ringLineWidth, 2)
+    }
+    func testLayoutAlignedCheck() {
+        XCTAssertTrue(layoutAligned(labelMinX: [34, 34.2, 34], labelMaxX: [60, 60, 60],
+                                    valueMinX: [120, 200, 110], valueMaxX: [248, 248, 247.8]))
+        XCTAssertFalse(layoutAligned(labelMinX: [34, 36, 34], labelMaxX: [60, 60, 60],
+                                     valueMinX: [120, 200, 110], valueMaxX: [248, 248, 248]))
+        XCTAssertFalse(layoutAligned(labelMinX: [34, 34, 34], labelMaxX: [60, 60, 60],
+                                     valueMinX: [120, 200, 110], valueMaxX: [248, 250, 248]))
+        XCTAssertFalse(layoutAligned(labelMinX: [34, 34, 34], labelMaxX: [60, 60, 130],
+                                     valueMinX: [120, 200, 110], valueMaxX: [248, 248, 248]))
+    }
+    // C4：最长文案
+    func testLongestTexts() {
+        XCTAssertEqual(formatUsageRow(used: 3_999_000_000_000, total: 4_000_000_000_000, unit: Units.gb), "3999 / 4000 G · 100%")
+        XCTAssertEqual(formatUsageRow(used: UInt64(128 * Units.gib), total: UInt64(128 * Units.gib), unit: Units.gib), "128 / 128 G · 100%")
+    }
+}

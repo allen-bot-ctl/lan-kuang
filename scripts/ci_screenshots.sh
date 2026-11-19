@@ -1,20 +1,59 @@
 #!/usr/bin/env bash
-# C4/C5：启动带 --debug-open-panel 的应用，截菜单栏与面板区域到 shots/。失败不阻断（由工作流 continue-on-error）。
+# C3/C4/C5：带隐藏参数启动应用打开面板，应用打印截图区域（左上原点、点）与 backingScaleFactor；
+# screencapture -R 按点裁剪，输出像素 = 点 × scale。再检查裁剪图不是全黑、面板布局自检通过。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source ./project.env
 bin="build/${NAME}.app/Contents/MacOS/$NAME"
 mkdir -p shots
-"$bin" --debug-open-panel >/tmp/shots.log 2>&1 &
-pid=$!
-trap 'kill -TERM "$pid" 2>/dev/null || true; sleep 1; kill -KILL "$pid" 2>/dev/null || true' EXIT
-sleep 6
-screencapture -x shots/full.png
-W=$(sips -g pixelWidth shots/full.png | awk '/pixelWidth/{print $2}')
-H=$(sips -g pixelHeight shots/full.png | awk '/pixelHeight/{print $2}')
-echo "screen ${W}x${H}"
-cw=$(( W < 1400 ? W : 1400 ))
-sips -c 60 "$cw" --cropOffset 0 $((W-cw)) shots/full.png --out shots/menubar.png >/dev/null
-ch=$(( H < 400 ? H : 400 ))
-sips -c "$ch" "$cw" --cropOffset 0 $((W-cw)) shots/full.png --out shots/panel.png >/dev/null
+
+nonblack() {  # 打印非黑像素占比；全黑返回 1
+  local png="$1" bmp="/tmp/$(basename "$1").bmp"
+  sips -s format bmp "$png" --out "$bmp" >/dev/null
+  python3 - "$bmp" <<'PY'
+import struct, sys
+d = open(sys.argv[1], 'rb').read()
+off = struct.unpack_from('<I', d, 10)[0]
+w, h = struct.unpack_from('<ii', d, 18)
+bpp = struct.unpack_from('<H', d, 28)[0]
+step = bpp // 8
+row = ((w * bpp + 31) // 32) * 4
+n = lit = mx = 0
+for y in range(abs(h)):
+    base = off + y * row
+    for x in range(w):
+        p = base + x * step
+        v = max(d[p], d[p + 1], d[p + 2])
+        mx = max(mx, v); n += 1
+        if v > 16: lit += 1
+print(f"{sys.argv[1]}: {w}x{abs(h)} max={mx} lit={lit/n:.3f}")
+sys.exit(0 if mx > 0 and lit > 0.01 else 1)
+PY
+}
+
+shoot() {  # $1=后缀  其余=启动参数
+  local tag="$1"; shift
+  local log="/tmp/shots-$tag.log"
+  "$bin" "$@" >"$log" 2>&1 &
+  local pid=$!
+  sleep 6
+  cat "$log"
+  local mb pn
+  mb=$(awk '/^DEBUG_RECT_MENUBAR/{print $2}' "$log")
+  pn=$(awk '/^DEBUG_RECT_PANEL/{print $2}' "$log")
+  [ -n "$mb" ] && [ -n "$pn" ] || { kill -TERM "$pid" || true; echo "::error::应用没有输出截图区域"; return 1; }
+  screencapture -x "shots/full$tag.png"
+  screencapture -x -R"$mb" "shots/menubar$tag.png"
+  screencapture -x -R"$pn" "shots/panel$tag.png"
+  kill -TERM "$pid" 2>/dev/null || true; sleep 1; kill -KILL "$pid" 2>/dev/null || true
+  for f in "shots/menubar$tag.png" "shots/panel$tag.png"; do
+    sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' '; echo
+    nonblack "$f" || { echo "::error::$f 全黑"; return 1; }
+  done
+  grep -q "^DEBUG_LAYOUT .* ok=true" "$log" || { echo "::error::面板布局自检失败"; return 1; }
+}
+
+shoot "" --debug-open-panel
+shoot "-longest" --debug-open-panel --debug-longest
+grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
 ls -l shots

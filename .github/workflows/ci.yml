@@ -83,8 +83,7 @@ jobs:
       - name: Idle footprint (C6, arm64, 60s)
         run: scripts/ci_idle_check.sh
 
-      - name: Screenshots (C4/C5)
-        continue-on-error: true
+      - name: Screenshots and panel layout check
         run: scripts/ci_screenshots.sh
 
       - name: Upload screenshots
