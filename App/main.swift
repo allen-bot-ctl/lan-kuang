@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "128G", bottom: "100%", height: 24)
                 let name = "icon2x-" + c.replacingOccurrences(of: ",", with: "-") + ".png"
                 try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent(name))
+                try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent(name.replacingOccurrences(of: "icon2x", with: "icon1x")))
                 print("DEBUG_ICON \(name) width=\(img.size.width)")
             }
             exit(0)
