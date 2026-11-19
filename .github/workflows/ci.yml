@@ -80,3 +80,19 @@ jobs:
             echo "RELEASE: smoke=$a alive 8s"
           done
 
+      - name: Idle footprint (C6, arm64, 60s)
+        run: scripts/ci_idle_check.sh
+
+      - name: Screenshots (C4/C5)
+        continue-on-error: true
+        run: scripts/ci_screenshots.sh
+
+      - name: Upload screenshots
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          if-no-files-found: warn
+          path: shots/
+

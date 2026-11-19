@@ -5,20 +5,14 @@ import IOKit.ps
 import Sparkle
 #endif
 
-/// 状态栏按钮的鼠标进出（hover 打开面板）。
-final class HoverTracker: NSResponder {
-    var onEnter: (() -> Void)?
-    var onExit: (() -> Void)?
-    override func mouseEntered(with event: NSEvent) { onEnter?() }
-    override func mouseExited(with event: NSEvent) { onExit?() }
-}
-
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var batteryItem: NSStatusItem!
     private var statsItem: NSStatusItem!
     private let model = PanelModel()
     private lazy var panel = HoverPanel(model: model)
     private let hover = HoverTracker()
+    private let debouncer = HoverDebouncer(now: { ProcessInfo.processInfo.systemUptime })
+    private let debugOpenPanel = CommandLine.arguments.contains("--debug-open-panel")
 
     private var gate = RefreshGate()
     private var prevTicks: CPUTicks?
@@ -27,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var batteryTimer: Timer?
     private var panelTimer: Timer?
     private var diskTimer: Timer?
-    private var hoverCloseTimer: Timer?
+    private var graceTimer: Timer?
     private var powerSource: CFRunLoopSource?
     private let contextMenu = NSMenu()
     private let loginItem = NSMenuItem(title: "开机自启动", action: #selector(toggleLoginItem), keyEquivalent: "")
@@ -53,18 +47,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         batteryItem.button?.imagePosition = .imageLeading
+        // 左项按最长文案定宽，数字变化时宽度不跳。
+        let widest = (statusTitleWidest as NSString).size(withAttributes: [.font: font]).width
+        statsItem.length = ceil(widest) + 12
 
         if let b = statsItem.button {
             b.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                                              owner: hover, userInfo: nil))
         }
-        hover.onEnter = { [weak self] in self?.showPanel() }
-        hover.onExit = { [weak self] in self?.scheduleHoverClose() }
+        hover.onEnter = { [weak self] in self?.hoverEvent(.itemEnter) }
+        hover.onExit = { [weak self] in self?.hoverEvent(.itemExit) }
+        panel.tracker.onEnter = { [weak self] in self?.hoverEvent(.panelEnter) }
+        panel.tracker.onExit = { [weak self] in self?.hoverEvent(.panelExit) }
 
         buildMenu()
         observeSleepAndLock()
         startPowerNotifications()
         resume()
+
+        if debugOpenPanel {   // CI 截图用的隐藏参数：启动 2 秒后打开面板并保持
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self else { return }
+                self.debouncer.handle(.click)
+                self.applyHoverState()
+            }
+        }
     }
 
     // MARK: 菜单
@@ -73,7 +80,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let update = NSMenuItem(title: "检查更新…", action: #selector(checkForUpdates), keyEquivalent: "")
         update.target = self
         loginItem.target = self
-        let quit = NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let displayName = (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String) ?? ""
+        let quit = NSMenuItem(title: "退出" + displayName, action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         contextMenu.items = [update, loginItem, .separator(), quit]
         contextMenu.delegate = self
     }
@@ -86,13 +94,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let isRight = NSApp.currentEvent?.type == .rightMouseUp
             || NSApp.currentEvent?.modifierFlags.contains(.control) == true
         if isRight || sender === batteryItem.button {
+            debouncer.forceHide()
             hidePanel()
             let item = sender === batteryItem.button ? batteryItem! : statsItem!
             item.menu = contextMenu
             sender.performClick(nil)
             item.menu = nil
         } else {
-            panel.isVisible ? hidePanel() : showPanel()
+            debouncer.handle(.click)
+            applyHoverState()
         }
     }
 
@@ -114,9 +124,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: 面板
 
+    private func hoverEvent(_ e: HoverDebouncer.Event) {
+        if debugOpenPanel { return }
+        debouncer.handle(e)
+        applyHoverState()
+        if debouncer.closeDeadline != nil {
+            graceTimer?.invalidate()
+            graceTimer = Timer.scheduledTimer(withTimeInterval: debouncer.grace + 0.02, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                self.debouncer.tick()
+                self.applyHoverState()
+            }
+        }
+    }
+
+    private func applyHoverState() {
+        if debouncer.isShown && !panel.isVisible { showPanel() }
+        if !debouncer.isShown && panel.isVisible { hidePanel() }
+    }
+
     private func showPanel() {
         guard let b = statsItem.button else { return }
-        hoverCloseTimer?.invalidate()
         refreshPanel()
         refreshDisk()
         panel.show(below: b)
@@ -124,24 +152,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func hidePanel() {
-        hoverCloseTimer?.invalidate(); hoverCloseTimer = nil
+        graceTimer?.invalidate(); graceTimer = nil
         panelTimer?.invalidate(); panelTimer = nil
         diskTimer?.invalidate(); diskTimer = nil
         panelPrevTicks = nil
         panel.orderOut(nil)
-    }
-
-    /// 鼠标离开按钮后，只要既不在按钮上也不在面板上就关闭。
-    private func scheduleHoverClose() {
-        hoverCloseTimer?.invalidate()
-        hoverCloseTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            guard self.panel.isVisible else { self.hoverCloseTimer?.invalidate(); self.hoverCloseTimer = nil; return }
-            let p = NSEvent.mouseLocation
-            let inPanel = self.panel.frame.insetBy(dx: -6, dy: -6).contains(p)
-            let inButton = self.statsItem.button?.window?.frame.contains(p) ?? false
-            if !inPanel && !inButton { self.hidePanel() }
-        }
     }
 
     private func startPanelTimers() {

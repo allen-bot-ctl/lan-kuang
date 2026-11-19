@@ -8,71 +8,69 @@ final class PanelModel: ObservableObject {
     @Published var disk: DiskUsage?
 }
 
-struct CardShell<Content: View>: View {
-    let title: String
-    @ViewBuilder var content: Content
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
-            content
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
-    }
-}
-
 struct Ring: View {
     let fraction: Double
     var body: some View {
         ZStack {
-            Circle().stroke(Color.primary.opacity(0.12), lineWidth: 5)
+            Circle().stroke(Color.primary.opacity(0.12), lineWidth: 3)
             Circle().trim(from: 0, to: max(0, min(1, fraction)))
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
         }
-        .frame(width: 40, height: 40)
+        .frame(width: 16, height: 16)
+    }
+}
+
+/// 一行：左标签（次要色），右数值（主色、等宽数字），不截断不换行。
+struct Row<Leading: View>: View {
+    let label: String
+    let value: String
+    @ViewBuilder var leading: Leading
+    var body: some View {
+        HStack(spacing: 6) {
+            leading
+            Text(label).foregroundColor(.secondary)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 13).monospacedDigit())
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .font(.system(size: 13))
+        .frame(height: 22)
     }
 }
 
 struct PanelView: View {
     @ObservedObject var model: PanelModel
     var body: some View {
-        VStack(spacing: 8) {
-            CardShell(title: "内存") {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(formatIntG(used: model.memUsed, total: model.memTotal, unit: Units.gib))
-                        .font(.system(size: 18, weight: .semibold).monospacedDigit())
-                    Spacer()
-                    Text("\(percentOf(used: model.memUsed, total: model.memTotal))%")
-                        .font(.system(size: 13).monospacedDigit()).foregroundColor(.secondary)
-                }
-                ProgressView(value: Double(percentOf(used: model.memUsed, total: model.memTotal)), total: 100)
-            }
-            CardShell(title: "CPU") {
-                Text("\(clampPercent(model.cpu))%").font(.system(size: 18, weight: .semibold).monospacedDigit())
-                ProgressView(value: Double(clampPercent(model.cpu)), total: 100)
-            }
-            CardShell(title: "磁盘（启动盘）") {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.disk.map { formatIntG(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—")
-                            .font(.system(size: 18, weight: .semibold).monospacedDigit())
-                        Text(model.disk.map { "已用 \($0.percent)%" } ?? "")
-                            .font(.system(size: 12).monospacedDigit()).foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Ring(fraction: Double(model.disk?.percent ?? 0) / 100)
-                }
+        VStack(spacing: 4) {
+            Row(label: "内存", value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib)) { EmptyView() }
+            Row(label: "CPU", value: formatCPUTitle(percent: model.cpu)) { EmptyView() }
+            Row(label: "磁盘", value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—") {
+                Ring(fraction: Double(model.disk?.percent ?? 0) / 100)
             }
         }
-        .padding(10)
+        .padding(.leading, 12)
+        .padding(.trailing, 12)
+        .padding(.vertical, 10)
         .frame(width: 260)
     }
 }
 
+/// 鼠标进出转发器（状态栏按钮与面板各一个）。
+final class HoverTracker: NSResponder {
+    var onEnter: (() -> Void)?
+    var onExit: (() -> Void)?
+    override func mouseEntered(with event: NSEvent) { onEnter?() }
+    override func mouseExited(with event: NSEvent) { onExit?() }
+}
+
 /// 不抢焦点的悬浮面板（NSPanel + SwiftUI 内容）。
 final class HoverPanel: NSPanel {
+    /// 面板自身的鼠标进出，交给 HoverDebouncer。
+    let tracker = HoverTracker()
+
     init(model: PanelModel) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 260, height: 300),
                    styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
@@ -100,6 +98,8 @@ final class HoverPanel: NSPanel {
             host.topAnchor.constraint(equalTo: effect.topAnchor),
             host.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
         ])
+        effect.addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                              owner: tracker, userInfo: nil))
         contentView = effect
         setContentSize(host.fittingSize)
     }

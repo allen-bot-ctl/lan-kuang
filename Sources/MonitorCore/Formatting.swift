@@ -11,9 +11,10 @@ public func formatMemoryTitle(usedBytes: UInt64) -> String {
     return "\(Int(max(0, g)))G"
 }
 
-/// 已用内存 = (active + wired + compressed) * pageSize。
-public func usedMemoryBytes(active: UInt64, wired: UInt64, compressed: UInt64, pageSize: UInt64) -> UInt64 {
-    (active &+ wired &+ compressed) &* pageSize
+/// 已用内存 = (internal − purgeable + wired + compressor) × pageSize（与契约一致，接近活动监视器「已使用内存」）。
+public func usedMemoryBytes(internalPages: UInt64, purgeable: UInt64, wired: UInt64, compressor: UInt64, pageSize: UInt64) -> UInt64 {
+    let app = internalPages > purgeable ? internalPages - purgeable : 0
+    return (app &+ wired &+ compressor) &* pageSize
 }
 
 /// 菜单栏 CPU 标题：整数百分比，例如 "23%"。
@@ -46,3 +47,14 @@ public func formatStatusTitle(memoryUsedBytes: UInt64, cpuPercent: Int) -> Strin
 public func formatIntG(used: UInt64, total: UInt64, unit: Double) -> String {
     "\(Int((Double(used) / unit).rounded())) / \(Int((Double(total) / unit).rounded())) G"
 }
+
+/// 面板行："13 / 16 G · 81%"。内存 unit=Units.gib，磁盘 unit=Units.gb。
+public func formatUsageRow(used: UInt64, total: UInt64, unit: Double) -> String {
+    "\(formatIntG(used: used, total: total, unit: unit)) · \(percentOf(used: used, total: total))%"
+}
+
+/// 菜单栏左项定宽用的最长文案。
+public let statusTitleWidest = "128G 100%"
+
+/// 由百分比浮点值得到整数 CPU 文案（四舍五入后夹在 0–100）。
+public func formatCPUTitle(rawPercent: Double) -> String { formatCPUTitle(percent: Int(rawPercent.rounded())) }

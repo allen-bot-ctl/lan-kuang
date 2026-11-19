@@ -8,7 +8,27 @@ final class FormattingTests: XCTestCase {
         XCTAssertEqual(formatMemoryTitle(usedBytes: 0), "0G")
     }
     func testUsedMemory() {
-        XCTAssertEqual(usedMemoryBytes(active: 100, wired: 50, compressed: 10, pageSize: 16384), 160 * 16384)
+        XCTAssertEqual(usedMemoryBytes(internalPages: 100, purgeable: 20, wired: 50, compressor: 10, pageSize: 16384), 140 * 16384)
+        XCTAssertEqual(usedMemoryBytes(internalPages: 5, purgeable: 9, wired: 1, compressor: 0, pageSize: 4096), 1 * 4096)
+    }
+    // C2
+    func testContractMemoryRounding() {
+        XCTAssertEqual(formatMemoryTitle(usedBytes: UInt64(12.4 * Units.gib)), "12G")
+        XCTAssertEqual(formatMemoryTitle(usedBytes: UInt64(12.5 * Units.gib)), "13G")
+        XCTAssertFalse(formatStatusTitle(memoryUsedBytes: UInt64(12.4 * Units.gib), cpuPercent: 9).contains("GB"))
+        XCTAssertFalse(formatStatusTitle(memoryUsedBytes: UInt64(12.4 * Units.gib), cpuPercent: 9).contains("."))
+    }
+    func testContractCPU996() {
+        XCTAssertEqual(formatCPUTitle(rawPercent: 99.6), "100%")
+        // tick 差：busy 996 / total 1000 = 99.6% -> 100
+        let a = CPUTicks(user: 0, system: 0, idle: 0, nice: 0)
+        let b = CPUTicks(user: 900, system: 90, idle: 4, nice: 6)
+        XCTAssertEqual(formatCPUTitle(percent: cpuPercent(previous: a, current: b)), "100%")
+    }
+    func testUsageRow() {
+        XCTAssertEqual(formatUsageRow(used: UInt64(13 * Units.gib), total: UInt64(16 * Units.gib), unit: Units.gib), "13 / 16 G · 81%")
+        XCTAssertEqual(formatUsageRow(used: 412_000_000_000, total: 994_000_000_000, unit: Units.gb), "412 / 994 G · 41%")
+        XCTAssertEqual(statusTitleWidest, "128G 100%")
     }
     func testCPUTitleClamps() {
         XCTAssertEqual(formatCPUTitle(percent: 23), "23%")
@@ -27,9 +47,11 @@ final class CPUTests: XCTestCase {
         let b = CPUTicks(user: 130, system: 120, idle: 740, nice: 110)  // busy 60 / total 100
         XCTAssertEqual(cpuPercent(previous: a, current: b), 60)
     }
+    // C3：两次采样相同不除零，输出 0%
     func testNoChange() {
         let a = CPUTicks(user: 1, system: 1, idle: 1, nice: 1)
         XCTAssertEqual(cpuPercent(previous: a, current: a), 0)
+        XCTAssertEqual(formatCPUTitle(percent: cpuPercent(previous: a, current: a)), "0%")
     }
     func testWraparound() {
         let a = CPUTicks(user: UInt32.max - 9, system: 0, idle: 0, nice: 0)
@@ -44,6 +66,7 @@ final class BatteryTests: XCTestCase {
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 100, isCharging: false, onAC: true)).overlay, .plug)
         XCTAssertEqual(batteryIconSpec(BatteryState(percent: 50, isCharging: false, onAC: false)).overlay, .none)
     }
+    // C2：20% 用电池红，21% 不红
     func testLowRedOnlyOnBattery() {
         XCTAssertTrue(batteryIconSpec(BatteryState(percent: 20, isCharging: false, onAC: false)).isLowRed)
         XCTAssertFalse(batteryIconSpec(BatteryState(percent: 21, isCharging: false, onAC: false)).isLowRed)
@@ -91,5 +114,44 @@ final class DiskTests: XCTestCase {
         XCTAssertEqual(d.percent, 60)
         XCTAssertEqual(d.text, "300.0 / 500.0 GB")
         XCTAssertEqual(DiskUsage(total: 1, available: 5).used, 0)
+    }
+}
+
+final class HoverTests: XCTestCase {
+    final class Clock { var t = 0.0 }
+
+    // C9：离开左项 → 200ms 后进入面板，面板仍显示
+    func testLeaveItemThenEnterPanelWithinGrace() {
+        let c = Clock(); let h = HoverDebouncer(now: { c.t })
+        XCTAssertTrue(h.handle(.itemEnter))
+        h.handle(.itemExit)
+        c.t = 0.2; XCTAssertTrue(h.tick())
+        h.handle(.panelEnter)
+        c.t = 1.0; XCTAssertTrue(h.tick())
+        XCTAssertNil(h.closeDeadline)
+    }
+    func testLeaveItemClosesAfterGrace() {
+        let c = Clock(); let h = HoverDebouncer(now: { c.t })
+        h.handle(.itemEnter); h.handle(.itemExit)
+        c.t = 0.29; XCTAssertTrue(h.tick())
+        c.t = 0.30; XCTAssertFalse(h.tick())
+    }
+    func testLeavePanelClosesAfterGrace() {
+        let c = Clock(); let h = HoverDebouncer(now: { c.t })
+        h.handle(.itemEnter); h.handle(.itemExit)
+        c.t = 0.1; h.handle(.panelEnter)
+        c.t = 2.0; h.handle(.panelExit)
+        c.t = 2.2; XCTAssertTrue(h.tick())
+        c.t = 2.31; XCTAssertFalse(h.tick())
+    }
+    func testReenterItemCancels() {
+        let c = Clock(); let h = HoverDebouncer(now: { c.t })
+        h.handle(.itemEnter); h.handle(.itemExit)
+        c.t = 0.1; h.handle(.itemEnter)
+        c.t = 1.0; XCTAssertTrue(h.tick())
+    }
+    func testClickToggles() {
+        let c = Clock(); let h = HoverDebouncer(now: { c.t })
+        XCTAssertTrue(h.handle(.click)); XCTAssertFalse(h.handle(.click))
     }
 }

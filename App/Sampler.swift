@@ -26,8 +26,9 @@ enum Sampler {
         }
         var ps: vm_size_t = 0
         host_page_size(mach_host_self(), &ps)
-        return usedMemoryBytes(active: UInt64(vm.active_count), wired: UInt64(vm.wire_count),
-                               compressed: UInt64(vm.compressor_page_count), pageSize: UInt64(ps))
+        return usedMemoryBytes(internalPages: UInt64(vm.internal_page_count), purgeable: UInt64(vm.purgeable_count),
+                               wired: UInt64(vm.wire_count), compressor: UInt64(vm.compressor_page_count),
+                               pageSize: UInt64(ps))
     }
 
     static var memoryTotalBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
