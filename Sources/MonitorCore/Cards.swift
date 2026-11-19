@@ -9,11 +9,12 @@ public enum CardLayout {
     public static let dotBottomPadding: Double = 6
     public static let animation: Double = 0.25
     /// v0.1.14：总览加标题行（18pt，下方 6pt 间距），与其他卡片一致。
-    public static let headerHeight: Double = 18
+    public static let headerHeight: Double = 22      // 「设置」胶囊 22pt 高
     public static let headerGap: Double = 6
+    public static let overviewBottomGap: Double = 6  // 最后一行到页码点
     /// 总览高度：标题行 + 间距 + 行数 × 22 + 行间距 4 + 上下各 10。所有卡片（含设置卡）同高。
     public static func overviewHeight(rows: Int) -> Double {
-        headerHeight + headerGap + Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + 20
+        10 + headerHeight + headerGap + Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + overviewBottomGap   // 0.1.13 高度 + 30
     }
 }
 
@@ -62,6 +63,11 @@ public struct CardPager: Equatable {
     private var accum = 0.0
     private var consumed = false
     private var lastFlip = -Double.infinity
+    /// v0.1.14：设置卡打开时锁住翻页。
+    public private(set) var settingsOpen = false
+    public mutating func openSettings() { settingsOpen = true }
+    /// 「‹ 返回」：关设置卡并回到总览（第 0 张）。
+    public mutating func closeSettings() { settingsOpen = false; reset() }
 
     public init(count: Int, threshold: Double = 20, cooldown: Double = 0.3) {
         self.count = max(1, count); self.threshold = threshold; self.cooldown = cooldown
@@ -72,6 +78,7 @@ public struct CardPager: Equatable {
     /// dx/dy：scrollingDelta（向左滑/向下滚为正 = 下一张）。返回是否翻页。
     @discardableResult
     public mutating func scroll(dx: Double, dy: Double, phase: Phase, now: Double) -> Bool {
+        if settingsOpen { return false }
         let d = abs(dx) >= abs(dy) ? dx : dy
         switch phase {
         case .began:

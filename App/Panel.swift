@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 final class PanelModel: ObservableObject {
     @Published var memUsed: UInt64 = 0
@@ -91,18 +92,37 @@ struct Row: View {
 }
 
 /// 总览标题行右侧的「⚙ 设置」（图标 + 文字，参照栏历）。
+/// 胶囊按钮（契约 C1）：22pt 高，左右 9pt，底色白 8%，悬停白 15%，手型光标。
+struct CapsuleButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+    @State private var hover = false
+    var body: some View {
+        Button(action: action) {
+            label()
+                .font(.system(size: 12))
+                .padding(.horizontal, 9)
+                .frame(height: 22)
+                .background(Capsule().fill(Color.primary.opacity(hover ? 0.15 : 0.08)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { h in
+            hover = h
+            if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
+    }
+}
+
 struct SettingsEntry: View {
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 3) {
-                Image(systemName: "gearshape").font(.system(size: 11, weight: .medium))
-                Text("设置").font(.system(size: 12))
+        CapsuleButton(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: "gearshape").font(.system(size: 12))
+                Text("设置")
             }
-            .foregroundColor(.secondary)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
     }
 }
 
@@ -117,6 +137,7 @@ struct OverviewCard: View {
             }
             .frame(height: CardLayout.headerHeight)
             .padding(.bottom, CardLayout.headerGap - 4)
+
             Row(id: "mem", label: "内存",
                 value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib),
                 percent: percentOf(used: model.memUsed, total: model.memTotal))
@@ -130,7 +151,8 @@ struct OverviewCard: View {
             }
         }
         .padding(.horizontal, PanelLayout.horizontalPadding)
-        .padding(.vertical, 10)
+        .padding(.top, 10)
+        .padding(.bottom, CardLayout.overviewBottomGap)
         .frame(width: PanelLayout.width)
         .coordinateSpace(name: "panel")
         .onPreferenceChange(FrameKey.self) { model.frames = $0 }
@@ -149,7 +171,7 @@ struct CardHeader: View {
             Spacer(minLength: 8)
             Text(value).font(.system(size: 12).monospacedDigit()).foregroundColor(.secondary).lineLimit(1).fixedSize()
         }
-        .frame(height: 18)
+        .frame(height: CardLayout.headerHeight)
     }
 }
 
@@ -434,21 +456,16 @@ struct SettingsCard: View {
     @ObservedObject var model: PanelModel
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
+            HStack(spacing: 8) {
+                CapsuleButton(action: { model.showSettings = false }) { Text("‹ 返回") }
                 Text("设置").font(.system(size: 13, weight: .semibold))
-                HStack {
-                    Button { model.showSettings = false } label: {
-                        Text("‹ 返回").font(.system(size: 12)).foregroundColor(.accentColor).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                }
+                Spacer()
             }
             .frame(height: CardLayout.headerHeight)
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 0) {
                     HStack {
-                        Text("开机启动")
+                        Text("开机自启动")
                         Spacer()
                         Toggle("", isOn: Binding(get: { model.loginEnabled },
                                                  set: { model.loginEnabled = $0; model.onToggleLogin?($0) }))
@@ -457,16 +474,16 @@ struct SettingsCard: View {
                     .frame(height: 30)
                     Divider()
                     HStack {
-                        Text("软件更新")
+                        Text("版本")
                         Spacer()
-                        Button("检查更新…") { model.onCheckUpdates?() }.controlSize(.small)
+                        Text(model.version).monospacedDigit().foregroundColor(.secondary)
                     }
                     .frame(height: 30)
                     Divider()
                     HStack {
-                        Text("当前版本")
+                        Text("更新")
                         Spacer()
-                        Text(model.version).monospacedDigit().foregroundColor(.secondary)
+                        CapsuleButton(action: { model.onCheckUpdates?() }) { Text("检查更新") }
                     }
                     .frame(height: 30)
                 }
@@ -504,6 +521,7 @@ final class HoverPanel: NSPanel {
     let model: PanelModel
     private(set) var pager = CardPager(count: 5)
     private var hostView: PanelHostingView!
+    private var settingsSink: AnyCancellable?
 
     init(model: PanelModel) {
         self.model = model
@@ -540,6 +558,16 @@ final class HoverPanel: NSPanel {
         setContentSize(host.fittingSize)
         host.onScroll = { [weak self] e in self?.handleScroll(e) }
         host.passThroughScroll = { [weak model] in model?.showSettings == true }
+        // 设置卡开关同步给翻页：打开时锁翻页；「返回」回到总览。
+        settingsSink = model.$showSettings.removeDuplicates().dropFirst().sink { [weak self] open in
+            guard let self else { return }
+            if open { self.pager.openSettings() }
+            else {
+                self.pager.closeSettings()
+                var t = Transaction(); t.disablesAnimations = true
+                withTransaction(t) { self.model.page = 0 }
+            }
+        }
     }
 
     /// 翻页：触控板横滑（有 phase）、鼠标滚轮竖滚（无 phase）。scrollingDelta 取反后正数 = 下一张。
@@ -562,6 +590,7 @@ final class HoverPanel: NSPanel {
     }
 
     func resetPage(to i: Int = 0) {
+        if model.showSettings { model.showSettings = false }
         pager.setCount(model.cards.count)
         pager.reset()
         for _ in 0..<i { _ = pager.scroll(dx: 0, dy: 1, phase: .none, now: Double(pager.index) * 10) }
