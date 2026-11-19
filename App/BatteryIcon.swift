@@ -77,9 +77,13 @@ enum StatusRenderer {
     static func image(battery: BatteryIconSpec?, top: String, bottom: String, height: CGFloat,
                       net: (String, String)? = nil, columns: (mem: Double, net: Double)? = nil) -> NSImage {
         // columns 给定时整项宽度贴合这两列（v0.1.8 防抖后的宽度），否则按最长文案定宽（调试字体对比用）
-        let w: CGFloat = columns.map { c in
-            CGFloat((L.sidePadding * 2 + (battery != nil ? L.glyphWidth + L.gap : 0) + c.mem + (net != nil ? L.columnGap + c.net : 0)).rounded(.up))
-        } ?? width(hasBattery: battery != nil, hasNet: net != nil)
+        var w = width(hasBattery: battery != nil, hasNet: net != nil)
+        if let c = columns {
+            let batteryPart: Double = battery != nil ? L.glyphWidth + L.gap : 0
+            let netPart: Double = net != nil ? L.columnGap + c.net : 0
+            let total: Double = L.sidePadding * 2 + batteryPart + c.mem + netPart
+            w = CGFloat(total.rounded(.up))
+        }
         let size = NSSize(width: w, height: height)
         let red = battery?.isLowRed ?? false
         let img = NSImage(size: size, flipped: false) { _ in
