@@ -269,3 +269,16 @@ final class NetworkTests: XCTestCase {
         XCTAssertEqual(formatNetLines(NetRate(up: 2150, down: 205)).0, "↑2.1K")
     }
 }
+
+final class StickyWidthTests: XCTestCase {
+    func testGrowImmediatelyShrinkAfterHold() {
+        var s = StickyWidth(hold: 10)
+        XCTAssertEqual(s.update(actual: 16, minimum: 16, now: 0), 16)
+        XCTAssertEqual(s.update(actual: 21, minimum: 16, now: 2), 21)    // ↓205K 立即撑开
+        XCTAssertEqual(s.update(actual: 19, minimum: 16, now: 4), 21)    // 变窄开始计时
+        XCTAssertEqual(s.update(actual: 17, minimum: 16, now: 12), 21)   // 8 秒，不缩
+        XCTAssertEqual(s.update(actual: 21, minimum: 16, now: 13), 21)   // 又变宽，计时清零
+        XCTAssertEqual(s.update(actual: 12, minimum: 16, now: 14), 21)
+        XCTAssertEqual(s.update(actual: 12, minimum: 16, now: 24), 16)   // 稳定 10 秒，缩回但不低于 99K 的宽度
+    }
+}

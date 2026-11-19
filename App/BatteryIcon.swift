@@ -60,9 +60,27 @@ enum StatusRenderer {
         CGFloat(L.width(textColumn: textColumnWidth, hasBattery: hasBattery, netColumn: hasNet ? netColumnWidth : 0))
     }
 
+    /// v0.1.8：本次两行文字的实际列宽（不取整）。
+    static func memActualWidth(top: String, bottom: String) -> Double {
+        let a: [NSAttributedString.Key: Any] = [.font: font]
+        return Double(max((top as NSString).size(withAttributes: a).width, (bottom as NSString).size(withAttributes: a).width))
+    }
+    static func netActualWidth(up: String, down: String) -> Double {
+        let a: [NSAttributedString.Key: Any] = [.font: font]
+        let n1 = (String(up.drop(while: { $0 == "↑" || $0 == "↓" })) as NSString).size(withAttributes: a).width
+        let n2 = (String(down.drop(while: { $0 == "↑" || $0 == "↓" })) as NSString).size(withAttributes: a).width
+        return Double(arrowWidth + arrowGap + max(n1, n2))
+    }
+    /// 网速列的最小宽度：按 `99K`。
+    static var netMinimumWidth: Double { netActualWidth(up: "↑99K", down: "↓99K") }
+
     static func image(battery: BatteryIconSpec?, top: String, bottom: String, height: CGFloat,
-                      net: (String, String)? = nil) -> NSImage {
-        let size = NSSize(width: width(hasBattery: battery != nil, hasNet: net != nil), height: height)
+                      net: (String, String)? = nil, columns: (mem: Double, net: Double)? = nil) -> NSImage {
+        // columns 给定时整项宽度贴合这两列（v0.1.8 防抖后的宽度），否则按最长文案定宽（调试字体对比用）
+        let w: CGFloat = columns.map { c in
+            CGFloat((L.sidePadding * 2 + (battery != nil ? L.glyphWidth + L.gap : 0) + c.mem + (net != nil ? L.columnGap + c.net : 0)).rounded(.up))
+        } ?? width(hasBattery: battery != nil, hasNet: net != nil)
+        let size = NSSize(width: w, height: height)
         let red = battery?.isLowRed ?? false
         let img = NSImage(size: size, flipped: false) { _ in
             let ink: NSColor = red ? .labelColor : .black

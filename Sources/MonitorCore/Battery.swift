@@ -99,3 +99,18 @@ public enum StatusItemLayout {
         return (sidePadding * 2 + battery + textColumn + net).rounded(.up)
     }
 }
+
+/// v0.1.8 列宽防抖：变宽立即撑开；变窄要连续 hold 秒都更窄才收回（收到当时的宽度）。不低于 minimum。
+public struct StickyWidth: Equatable {
+    public private(set) var value: Double = 0
+    private var narrowSince: Double?
+    public let hold: Double
+    public init(hold: Double = 10) { self.hold = hold }
+    public mutating func update(actual: Double, minimum: Double = 0, now: Double) -> Double {
+        let target = max(actual, minimum)
+        if target >= value { value = target; narrowSince = nil }
+        else if let s = narrowSince { if now - s >= hold { value = target; narrowSince = nil } }
+        else { narrowSince = now }
+        return value
+    }
+}

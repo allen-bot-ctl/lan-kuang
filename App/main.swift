@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var memTitle = "0G"
     private var cpuTitle = "0%"
     private var netLines = ("↑0B", "↓0B")
+    private var memSticky = StickyWidth(hold: 10), netSticky = StickyWidth(hold: 10)
+    private var lastDrawKey = ""
     private var prevNet: [String: InterfaceCounters]?
     private var prevNetAt: TimeInterval = 0
     private let batteryLineItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -57,8 +59,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 print("DEBUG_ICON \(name) width=\(img.size.width)")
             }
             // v0.1.7 S1/S2/S3：最长与短值各一组，打印实际间距和整项宽
-            for (tag, t, b, n) in [("longest", "128G", "100%", netWidestLines), ("short", "13G", "89%", ("↑32K", "↓248K"))] {
-                let img = StatusRenderer.image(battery: batteryGlyphSpec(parseDebugBattery("charging,18")!), top: t, bottom: b, height: 24, net: n)
+            for (tag, t, b, n) in [("longest", "128G", "100%", netWidestLines), ("short", "13G", "73%", ("↑9.5K", "↓39K")),
+                                    ("k205", "13G", "73%", ("↑2.1K", "↓205K"))] {
+                let cols = (StatusRenderer.memActualWidth(top: t, bottom: b),
+                            max(StatusRenderer.netActualWidth(up: n.0, down: n.1), StatusRenderer.netMinimumWidth))
+                let img = StatusRenderer.image(battery: batteryGlyphSpec(parseDebugBattery("charging,18")!), top: t, bottom: b, height: 24, net: n, columns: cols)
                 try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent("spacing1x-\(tag).png"))
                 try? StatusRenderer.renderPNG(img, scale: 2, to: dir.appendingPathComponent("spacing2x-\(tag).png"))
                 let g = StatusRenderer.lastGaps
@@ -292,7 +297,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func redrawItem() {
         guard let b = statsItem.button else { return }
         let h = NSStatusBar.system.thickness
-        let img = StatusRenderer.image(battery: batteryGlyphSpec(battery), top: memTitle, bottom: cpuTitle, height: h, net: netLines)
+        let now = ProcessInfo.processInfo.systemUptime
+        let memW = memSticky.update(actual: StatusRenderer.memActualWidth(top: memTitle, bottom: cpuTitle), now: now)
+        let netW = netSticky.update(actual: StatusRenderer.netActualWidth(up: netLines.0, down: netLines.1),
+                                    minimum: StatusRenderer.netMinimumWidth, now: now)
+        let spec = batteryGlyphSpec(battery)
+        let key = "\(String(describing: spec))|\(memTitle)|\(cpuTitle)|\(netLines)|\(memW)|\(netW)|\(h)"
+        if key == lastDrawKey { return }   // 内容没变就不重绘，省 CPU
+        lastDrawKey = key
+        let img = StatusRenderer.image(battery: spec, top: memTitle, bottom: cpuTitle, height: h, net: netLines, columns: (memW, netW))
         statsItem.length = img.size.width
         b.image = img
         b.title = ""
