@@ -1,18 +1,18 @@
 import AppKit
 
-/// 单项菜单栏图像：电池图形（可无）· 间距 · 两行 9.5pt 等宽数字文字（上内存、下 CPU）。
+/// 单项菜单栏图像：电池图形（可无）· 间距 · 两行 10pt 窄体等宽数字文字（上内存、下 CPU）。
 /// 非低电量时整张为 template 图（跟随深浅菜单栏）；用电池且 ≤20% 时填充为 systemRed，其余用 labelColor。
 enum StatusRenderer {
     typealias L = StatusItemLayout
 
-    /// 9.5pt semibold 标准宽度 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
+    /// 10pt semibold 窄体 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
     /// 调试用：离屏对比不同字号/字宽（仅 --debug-render-icons 设置）。
     static var fontOverride: (CGFloat, NSFont.Width)? = nil { didSet { cachedFont = nil } }
     private static var cachedFont: NSFont?
     static var font: NSFont {
         if let f = cachedFont { return f }
         let size = fontOverride?.0 ?? CGFloat(L.fontSize)
-        let base = NSFont.systemFont(ofSize: size, weight: .semibold, width: fontOverride?.1 ?? .standard)
+        let base = NSFont.systemFont(ofSize: size, weight: .semibold, width: fontOverride?.1 ?? .condensed)
         let desc = base.fontDescriptor.addingAttributes([
             .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: 6,
                                 NSFontDescriptor.FeatureKey.selectorIdentifier: 0]]
