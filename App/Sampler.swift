@@ -33,6 +33,28 @@ enum Sampler {
 
     static var memoryTotalBytes: UInt64 { ProcessInfo.processInfo.physicalMemory }
 
+    /// v0.1.12：已缓存文件（external pages），与活动监视器「已缓存文件」同口径。
+    static func memoryCachedBytes() -> UInt64 {
+        var vm = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        _ = withUnsafeMutablePointer(to: &vm) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        var ps: vm_size_t = 0
+        host_page_size(mach_host_self(), &ps)
+        return UInt64(vm.external_page_count) * UInt64(ps)
+    }
+
+    /// v0.1.12：已使用的交换（sysctl vm.swapusage）。
+    static func swapUsedBytes() -> UInt64 {
+        var x = xsw_usage()
+        var len = MemoryLayout<xsw_usage>.size
+        guard sysctlbyname("vm.swapusage", &x, &len, nil, 0) == 0 else { return 0 }
+        return x.xsu_used
+    }
+
     static func disk() -> DiskUsage? {
         let keys: Set<URLResourceKey> = [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey]
         guard let v = try? URL(fileURLWithPath: "/").resourceValues(forKeys: keys),

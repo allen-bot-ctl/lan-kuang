@@ -13,6 +13,14 @@ final class PanelModel: ObservableObject {
     var frames: [String: CGRect] = [:]
     /// 调试：固定最长文案（C4 截图与布局自检）。
     var debugLongest = false
+    // v0.1.12 卡片
+    @Published var page = 0
+    @Published var cpuSplitNow = CPUSplit(system: 0, user: 0, idle: 100)
+    @Published var cpuHistory = History<CPUSplit>()
+    @Published var memHistory = History<Double>()
+    @Published var memCached: UInt64 = 0
+    @Published var swapUsed: UInt64 = 0
+    var cards: [String] { cardIDs(hasBattery: battery != nil) }
 }
 
 struct Ring: View {
@@ -76,7 +84,7 @@ struct Row: View {
     }
 }
 
-struct PanelView: View {
+struct OverviewCard: View {
     @ObservedObject var model: PanelModel
     var body: some View {
         VStack(spacing: 4) {
@@ -100,6 +108,272 @@ struct PanelView: View {
     }
 }
 
+// MARK: v0.1.12 卡片
+
+/// 卡片标题行：左标题（13pt 中粗），右数值（次要色、等宽数字）。
+struct CardHeader: View {
+    let title: String
+    let value: String
+    var body: some View {
+        HStack {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 8)
+            Text(value).font(.system(size: 12).monospacedDigit()).foregroundColor(.secondary).lineLimit(1).fixedSize()
+        }
+        .frame(height: 18)
+    }
+}
+
+/// 底行一项：色点 + 标签 + 数值。
+struct Legend: View {
+    let color: Color?
+    let label: String
+    let value: String
+    var body: some View {
+        HStack(spacing: 3) {
+            if let color { Circle().fill(color).frame(width: 6, height: 6) }
+            Text(label).foregroundColor(.secondary)
+            Text(value).monospacedDigit()
+        }
+        .font(.system(size: 10.5))
+        .lineLimit(1)
+        .fixedSize()
+    }
+}
+
+/// 曲线：固定 120 个槽，最新的点在最右；纵轴 0–100。layers 由下往上叠。
+struct Chart: View {
+    let layers: [[Double]]     // 每层同长度，值为该层自身的占比
+    let colors: [Color]
+    var body: some View {
+        GeometryReader { g in
+            let cap = Double(CardLayout.historyCapacity)
+            let w = g.size.width, h = g.size.height
+            let n = layers.first?.count ?? 0
+            let step = w / (cap - 1)
+            let x0 = w - Double(max(0, n - 1)) * step
+            ZStack {
+                RoundedRectangle(cornerRadius: 4).fill(Color.primary.opacity(0.06))
+                ForEach(0..<3) { i in
+                    Path { p in let y = h * Double(i + 1) / 4; p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: w, y: y)) }
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+                if n > 1 {
+                    ForEach(Array(layers.indices.reversed()), id: \.self) { li in
+                        let top = (0..<n).map { i in (0...li).reduce(0.0) { $0 + layers[$1][i] } }
+                        let bottom = (0..<n).map { i in li == 0 ? 0 : (0..<li).reduce(0.0) { $0 + layers[$1][i] } }
+                        let pt: (Int, Double) -> CGPoint = { i, v in CGPoint(x: x0 + Double(i) * step, y: h - h * min(100, max(0, v)) / 100) }
+                        Path { p in
+                            p.move(to: pt(0, top[0]))
+                            for i in 1..<n { p.addLine(to: pt(i, top[i])) }
+                            for i in stride(from: n - 1, through: 0, by: -1) { p.addLine(to: pt(i, bottom[i])) }
+                            p.closeSubpath()
+                        }
+                        .fill(colors[li].opacity(0.55))
+                        Path { p in
+                            p.move(to: pt(0, top[0]))
+                            for i in 1..<n { p.addLine(to: pt(i, top[i])) }
+                        }
+                        .stroke(colors[li], lineWidth: 1)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+    }
+}
+
+struct MemCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        VStack(spacing: 6) {
+            CardHeader(title: "内存", value: String(format: "%.1f / %.0f G · %d%%",
+                Double(model.memUsed) / Units.gib, Double(model.memTotal) / Units.gib,
+                percentOf(used: model.memUsed, total: model.memTotal)))
+            Chart(layers: [model.memHistory.values], colors: [.green])
+            HStack {
+                Legend(color: .green, label: "已使用", value: formatGiB1(model.memUsed))
+                Spacer(minLength: 4)
+                Legend(color: nil, label: "已缓存", value: formatGiB1(model.memCached))
+                Spacer(minLength: 4)
+                Legend(color: nil, label: "交换", value: formatGiB1(model.swapUsed))
+            }
+        }
+    }
+}
+
+struct CPUCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        let s = model.cpuSplitNow
+        VStack(spacing: 6) {
+            CardHeader(title: "CPU", value: formatCPUTitle(percent: model.cpu))
+            Chart(layers: [model.cpuHistory.values.map(\.system), model.cpuHistory.values.map(\.user)], colors: [.red, .blue])
+            HStack {
+                Legend(color: .red, label: "系统", value: String(format: "%.1f%%", s.system))
+                Spacer(minLength: 4)
+                Legend(color: .blue, label: "用户", value: String(format: "%.1f%%", s.user))
+                Spacer(minLength: 4)
+                Legend(color: nil, label: "闲置", value: String(format: "%.1f%%", s.idle))
+            }
+        }
+    }
+}
+
+struct BigLine: View {
+    let label: String
+    let value: String
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(label).font(.system(size: 12)).foregroundColor(.secondary)
+            Text(value).monospacedDigit()
+        }
+        .lineLimit(1)
+    }
+}
+
+struct DiskCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        let d = model.disk
+        VStack(spacing: 6) {
+            CardHeader(title: "磁盘", value: d.map { "\($0.percent)%" } ?? "—")
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 9)
+                    Circle().trim(from: 0, to: Double(d?.percent ?? 0) / 100)
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 9, lineCap: .butt))
+                        .rotationEffect(.degrees(-90))
+                    Text(d.map { "\($0.percent)%" } ?? "—").font(.system(size: 15, weight: .semibold).monospacedDigit())
+                }
+                .padding(4.5)
+                .frame(width: 72, height: 72)
+                VStack(alignment: .leading, spacing: 5) {
+                    BigLine(label: "已用", value: d.map { formatGB1($0.used) } ?? "—")
+                    BigLine(label: "可用", value: d.map { formatGB1($0.available) } ?? "—")
+                    BigLine(label: "共", value: d.map { formatGB1($0.total) } ?? "—")
+                }
+                .font(.system(size: 13))
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+}
+
+struct NetCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        VStack(spacing: 6) {
+            CardHeader(title: "网络", value: "")
+            VStack(alignment: .leading, spacing: 4) {
+                Text("↑ " + formatRateFull(model.net.up))
+                Text("↓ " + formatRateFull(model.net.down))
+            }
+            .font(.system(size: 24, weight: .medium).monospacedDigit())
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// 大电池：填充按电量，充电时中间一个闪电，低电量红色（同菜单栏规则）。
+struct BigBattery: View {
+    let state: BatteryState
+    var body: some View {
+        let spec = batteryIconSpec(state)
+        let w: CGFloat = 64, h: CGFloat = 30
+        HStack(spacing: 2) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 6).stroke(Color.primary.opacity(0.55), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(spec.isLowRed ? Color.red : (state.isCharging || state.onAC ? Color.green : Color.primary.opacity(0.75)))
+                    .frame(width: max(0, (w - 8) * spec.fillFraction))
+                    .padding(4)
+                if state.isCharging {
+                    Image(systemName: "bolt.fill").font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white).shadow(radius: 1)
+                        .frame(width: w, height: h)
+                }
+            }
+            .frame(width: w, height: h)
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.primary.opacity(0.55)).frame(width: 3, height: 10)
+        }
+    }
+}
+
+struct BatCard: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        VStack(spacing: 6) {
+            CardHeader(title: "电池", value: model.battery.map(batteryStatusText) ?? "")
+            HStack(spacing: 16) {
+                if let b = model.battery {
+                    BigBattery(state: b)
+                    Text("\(clampPercent(b.percent))%").font(.system(size: 24, weight: .medium).monospacedDigit())
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(maxHeight: .infinity)
+        }
+    }
+}
+
+struct PageDots: View {
+    let count: Int
+    let index: Int
+    var body: some View {
+        HStack(spacing: CardLayout.dotSpacing) {
+            ForEach(0..<count, id: \.self) { i in
+                Circle().fill(Color.primary.opacity(i == index ? 0.9 : 0.25))
+                    .frame(width: CardLayout.dotSize, height: CardLayout.dotSize)
+            }
+        }
+        .frame(height: CardLayout.dotAreaHeight)
+        .padding(.bottom, CardLayout.dotBottomPadding)
+    }
+}
+
+/// v0.1.12 面板：同尺寸卡片横排，按 page 平移；底部页码点只做指示。
+struct PanelView: View {
+    @ObservedObject var model: PanelModel
+    var body: some View {
+        let cards = model.cards
+        let h = CardLayout.overviewHeight(rows: cards.count - 1)
+        let w = PanelLayout.width
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                ForEach(cards, id: \.self) { id in
+                    card(id).frame(width: w, height: h, alignment: .top)
+                }
+            }
+            .offset(x: -CGFloat(min(model.page, cards.count - 1)) * w)
+            .animation(.easeInOut(duration: CardLayout.animation), value: model.page)
+            .frame(width: w, height: h, alignment: .leading)
+            .clipped()
+            PageDots(count: cards.count, index: model.page)
+        }
+        .frame(width: w)
+    }
+
+    @ViewBuilder private func card(_ id: String) -> some View {
+        switch id {
+        case "overview": OverviewCard(model: model)
+        case "mem": MemCard(model: model).padding(.horizontal, PanelLayout.horizontalPadding).padding(.vertical, 10)
+        case "cpu": CPUCard(model: model).padding(.horizontal, PanelLayout.horizontalPadding).padding(.vertical, 10)
+        case "disk": DiskCard(model: model).padding(.horizontal, PanelLayout.horizontalPadding).padding(.vertical, 10)
+        case "net": NetCard(model: model).padding(.horizontal, PanelLayout.horizontalPadding).padding(.vertical, 10)
+        default: BatCard(model: model).padding(.horizontal, PanelLayout.horizontalPadding).padding(.vertical, 10)
+        }
+    }
+}
+
+/// 吃掉面板上的滚动事件（不传给下面），交给翻页逻辑。
+final class PanelHostingView: NSHostingView<PanelView> {
+    var onScroll: ((NSEvent) -> Void)?
+    override func scrollWheel(with event: NSEvent) { onScroll?(event) }
+}
+
 /// 鼠标进出转发器（状态栏按钮与面板各一个）。
 final class HoverTracker: NSResponder {
     var onEnter: (() -> Void)?
@@ -112,8 +386,12 @@ final class HoverTracker: NSResponder {
 final class HoverPanel: NSPanel {
     /// 面板自身的鼠标进出，交给 HoverDebouncer。
     let tracker = HoverTracker()
+    let model: PanelModel
+    private(set) var pager = CardPager(count: 5)
+    private var hostView: PanelHostingView!
 
     init(model: PanelModel) {
+        self.model = model
         super.init(contentRect: NSRect(x: 0, y: 0, width: 260, height: 300),
                    styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: true)
         isFloatingPanel = true
@@ -131,7 +409,8 @@ final class HoverPanel: NSPanel {
         // v0.1.11：用 maskImage 裁圆角（窗口阴影与背景都跟着圆角走）。
         // 旧版只给 layer 设 cornerRadius，窗口本身仍是方的，左下/右下角会露出方形底。
         effect.maskImage = HoverPanel.roundedMask(radius: 10)
-        let host = NSHostingView(rootView: PanelView(model: model))
+        let host = PanelHostingView(rootView: PanelView(model: model))
+        hostView = host
         host.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(host)
         NSLayoutConstraint.activate([
@@ -144,6 +423,34 @@ final class HoverPanel: NSPanel {
                                               owner: tracker, userInfo: nil))
         contentView = effect
         setContentSize(host.fittingSize)
+        host.onScroll = { [weak self] e in self?.handleScroll(e) }
+    }
+
+    /// 翻页：触控板横滑（有 phase）、鼠标滚轮竖滚（无 phase）。scrollingDelta 取反后正数 = 下一张。
+    func handleScroll(_ e: NSEvent) {
+        let phase: CardPager.Phase
+        if e.momentumPhase != [] { phase = .momentum }
+        else if e.phase.contains(.began) || e.phase.contains(.mayBegin) { phase = .began }
+        else if e.phase.contains(.changed) { phase = .changed }
+        else if e.phase.contains(.ended) || e.phase.contains(.cancelled) { phase = .ended }
+        else { phase = .none }
+        scroll(dx: -Double(e.scrollingDeltaX), dy: -Double(e.scrollingDeltaY), phase: phase, now: e.timestamp)
+    }
+
+    /// 合成事件走真实入口：托管视图的 scrollWheel。
+    func hostScroll(_ e: NSEvent) { hostView.scrollWheel(with: e) }
+
+    func scroll(dx: Double, dy: Double, phase: CardPager.Phase, now: Double) {
+        pager.setCount(model.cards.count)
+        if pager.scroll(dx: dx, dy: dy, phase: phase, now: now) { model.page = pager.index }
+    }
+
+    func resetPage(to i: Int = 0) {
+        pager.setCount(model.cards.count)
+        pager.reset()
+        for _ in 0..<i { _ = pager.scroll(dx: 0, dy: 1, phase: .none, now: Double(pager.index) * 10) }
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { model.page = pager.index }
     }
     override var canBecomeKey: Bool { false }
 
