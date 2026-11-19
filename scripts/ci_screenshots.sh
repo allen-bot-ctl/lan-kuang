@@ -66,6 +66,8 @@ shoot "-longest" --debug-open-panel --debug-longest --debug-battery=ac,100
 for st in ac,100 charging,18 battery,62 battery,15 none; do
   shoot "-bat-${st%%,*}-${st#*,}" --debug-open-panel --debug-battery="$st"
 done
+"$bin" --debug-render-cards=shots/cards
+ls shots/cards/card*-dark.png shots/cards/card*-light.png | wc -l | awk '{exit !($1==12)}' || { echo "::error::卡片渲染不满 12 张"; exit 1; }
 # v0.1.12 M2：每张卡片深浅各一套 2x 截图（模拟充电中 62% 以出电池卡）
 for ap in dark light; do
   for pg in 0 1 2 3 4 5; do
