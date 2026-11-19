@@ -1,14 +1,14 @@
 import AppKit
 
-/// 单项菜单栏图像：电池图形（可无）· 间距 · 两行 9pt 等宽数字文字（上内存、下 CPU）。
+/// 单项菜单栏图像：电池图形（可无）· 间距 · 两行 10pt 等宽数字文字（上内存、下 CPU）。
 /// 非低电量时整张为 template 图（跟随深浅菜单栏）；用电池且 ≤20% 时填充为 systemRed，其余用 labelColor。
 enum StatusRenderer {
     typealias L = StatusItemLayout
 
-    /// 9pt semibold 窄体 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
+    /// 10pt semibold 标准宽度 + 等宽数字（kNumberSpacingType=6 / kMonospacedNumbersSelector=0），压缩项宽。
     static let font: NSFont = {
         let size = CGFloat(L.fontSize)
-        let base = NSFont.systemFont(ofSize: size, weight: .semibold, width: .condensed)
+        let base = NSFont.systemFont(ofSize: size, weight: .semibold)
         let desc = base.fontDescriptor.addingAttributes([
             .featureSettings: [[NSFontDescriptor.FeatureKey.typeIdentifier: 6,
                                 NSFontDescriptor.FeatureKey.selectorIdentifier: 0]]
@@ -52,17 +52,18 @@ enum StatusRenderer {
         return img
     }
 
-    /// 竖电池（v0.1.3）：本体 11×14 圆角 2（含正极头总高 16）、1pt 描边 60% 不透明；正极头朝上；填充区 8×10 从下往上。
+    /// 竖电池（v0.1.3）：本体 10×15 圆角 2（含正极头总高 17.2）、1.5pt 描边不透明；正极头朝上；填充区 5×10 从下往上。
     /// 接电时在填充上叠实心 ⚡，外圈先用 .clear 挖出 1pt 的空隙，满格时轮廓仍清楚。
     private static func drawBattery(_ spec: BatteryIconSpec, origin o: NSPoint, ink: NSColor) {
         let bw = CGFloat(L.glyphWidth), bh = CGFloat(L.bodyHeight)
         let outer = NSRect(x: o.x, y: o.y, width: bw, height: bh)
-        let body = outer.insetBy(dx: 0.5, dy: 0.5)
-        ink.withAlphaComponent(0.6).setStroke()
+        let sw = CGFloat(L.strokeWidth)
+        let body = outer.insetBy(dx: sw / 2, dy: sw / 2)
+        ink.setStroke()
         let outline = NSBezierPath(roundedRect: body, xRadius: 1.5, yRadius: 1.5)
-        outline.lineWidth = 1
+        outline.lineWidth = sw
         outline.stroke()
-        ink.withAlphaComponent(0.6).setFill()
+        ink.setFill()
         let cw = CGFloat(L.capWidth), ch = CGFloat(L.capHeight)
         NSBezierPath(roundedRect: NSRect(x: outer.midX - cw / 2, y: outer.maxY + CGFloat(L.capGap), width: cw, height: ch),
                      xRadius: 0.6, yRadius: 0.6).fill()
@@ -77,9 +78,9 @@ enum StatusRenderer {
         if spec.bolt { drawBolt(center: NSPoint(x: outer.midX, y: outer.midY), ink: ink) }
     }
 
-    /// ⚡ 约 4.5×8pt：先描 1pt 的 .clear 外圈（只在本体内部挖），再实心填充。
+    /// ⚡ 约 3.6×9pt：先描 1pt 的 .clear 外圈（只在本体内部挖），再实心填充。
     private static func drawBolt(center c: NSPoint, ink: NSColor) {
-        let w: CGFloat = 4.5, h: CGFloat = 8
+        let w: CGFloat = 3.6, h: CGFloat = 9
         let x0 = c.x - w / 2, y0 = c.y - h / 2
         let p = NSBezierPath()
         p.move(to: NSPoint(x: x0 + w * 0.70, y: y0 + h))          // 上尖

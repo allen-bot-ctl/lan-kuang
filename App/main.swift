@@ -44,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let arg = CommandLine.arguments.first(where: { $0.hasPrefix("--debug-render-icons=") }) {
             let dir = URL(fileURLWithPath: String(arg.dropFirst("--debug-render-icons=".count)))
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let cases = ["ac,100", "charging,45", "battery,62", "battery,15", "none"]
+            let cases = ["ac,100", "charging,18", "battery,62", "battery,15", "none"]
             for c in cases {
                 guard let st = parseDebugBattery(c) else { continue }
                 let img = StatusRenderer.image(battery: batteryGlyphSpec(st), top: "128G", bottom: "100%", height: 24)

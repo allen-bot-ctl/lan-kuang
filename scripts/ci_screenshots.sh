@@ -63,7 +63,7 @@ shoot "-longest" --debug-open-panel --debug-longest --debug-battery=ac,100
 "$bin" --debug-render-icons="$PWD/shots" | tee /tmp/shots-icons.log
 ls shots/icon2x-*.png | wc -l | awk '{exit !($1==5)}' || { echo "::error::2x 图标没有渲染满 5 张"; exit 1; }
 for f in shots/icon[12]x-*.png; do sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' '; echo; done
-for st in ac,100 charging,45 battery,62 battery,15 none; do
+for st in ac,100 charging,18 battery,62 battery,15 none; do
   shoot "-bat-${st%%,*}-${st#*,}" --debug-open-panel --debug-battery="$st"
 done
 grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
