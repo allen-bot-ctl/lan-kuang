@@ -72,11 +72,26 @@ enum StatusRenderer {
         case .plug: name = "powerplug.fill"
         case .none: name = nil
         }
-        if let name, let sym = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+        guard let name else { return }
+        // 先用稍大的同形符号挖出一圈描边空隙，再用墨色实心画符号本身：
+        // 不论电量多少（填充是否盖到中间），⚡/插头都清晰可见。
+        if let halo = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 9, weight: .black)) {
+            let s = halo.size
+            halo.draw(in: NSRect(x: body.midX - s.width / 2, y: body.midY - s.height / 2, width: s.width, height: s.height),
+                      from: .zero, operation: .destinationOut, fraction: 1)
+        }
+        if let sym = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 7, weight: .black)) {
             let s = sym.size
             let r = NSRect(x: body.midX - s.width / 2, y: body.midY - s.height / 2, width: s.width, height: s.height)
-            sym.draw(in: r, from: .zero, operation: .destinationOut, fraction: 1)
+            let tinted = NSImage(size: s, flipped: false) { rect in
+                sym.draw(in: rect)
+                ink.set()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.draw(in: r, from: .zero, operation: .sourceOver, fraction: 1)
         }
     }
 }
