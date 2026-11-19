@@ -24,6 +24,14 @@ public func cardIDs(hasBattery: Bool) -> [String] {
 }
 
 /// 定长历史：最多 capacity 个点，超出丢最旧。
+/// 冷启动补点（0.1.15）：面板打开且曲线未满时临时每 25ms 采一次，约 3 秒补满；满了或面板关掉就停。
+public enum FastFill {
+    public static let interval: TimeInterval = 0.025
+    public static func needed(cpuCount: Int, memCount: Int, capacity: Int = CardLayout.historyCapacity) -> Bool {
+        min(cpuCount, memCount) < capacity
+    }
+}
+
 public struct History<T>: Sequence {
     public private(set) var values: [T] = []
     public let capacity: Int

@@ -347,4 +347,11 @@ final class CardsTests: XCTestCase {
         p.setCount(4); XCTAssertEqual(p.index, 3)
         p.reset(); XCTAssertEqual(p.index, 0)
     }
+
+    func testFastFillNeededUntilBothFull() {
+        XCTAssertTrue(FastFill.needed(cpuCount: 0, memCount: 1))
+        XCTAssertTrue(FastFill.needed(cpuCount: 119, memCount: 120))
+        XCTAssertFalse(FastFill.needed(cpuCount: 120, memCount: 120))
+        XCTAssertEqual(FastFill.interval * Double(CardLayout.historyCapacity), 3.0, accuracy: 0.001)
+    }
 }
