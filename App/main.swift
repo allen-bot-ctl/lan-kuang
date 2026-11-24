@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var battery: BatteryState?
     private var memTitle = "0G"
     private var cpuTitle = "0%"
+    private var menuCPU = 0
+    private var menuMemoryUsed: UInt64 = 0
     private var netLines = ("↑0B", "↓0B")
     private var memSticky = StickyWidth(hold: 10), netSticky = StickyWidth(hold: 10)
     private var lastDrawKey = ""
@@ -108,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try? StatusRenderer.renderPNG(img, scale: 1, to: dir.appendingPathComponent(name.replacingOccurrences(of: "icon2x", with: "icon1x")))
                 print("DEBUG_ICON \(name) width=\(img.size.width)")
             }
+            verifyWarningImages(in: dir)
             // v0.1.7 S1/S2/S3：最长与短值各一组，打印实际间距和整项宽
             for (tag, t, b, n) in [("longest", "128G", "100%", netWidestLines), ("short", "13G", "73%", ("↑9.5K", "↓39K")),
                                     ("k205", "13G", "73%", ("↑2.1K", "↓205K"))] {
@@ -153,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.tracker.onEnter = { [weak self] in self?.hoverEvent(.panelEnter) }
         panel.tracker.onExit = { [weak self] in self?.hoverEvent(.panelExit) }
 
+        model.warningThresholds = UsageWarningThresholds.load(from: .standard)
         buildMenu()
         observeSleepAndLock()
         startPowerNotifications()
@@ -219,6 +223,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         run(0)
     }
 
+    /// CI：固定文字和布局，验证两种外观的 CPU / 内存红字互不影响。
+    private func verifyWarningImages(in directory: URL) {
+        func redPixels(_ url: URL) throws -> Set<Int> {
+            guard let bitmap = NSBitmapImageRep(data: try Data(contentsOf: url)) else { return [] }
+            var pixels = Set<Int>()
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    if color.redComponent > color.greenComponent + 0.25
+                        && color.redComponent > color.blueComponent + 0.22 {
+                        pixels.insert(y * bitmap.pixelsWide + x)
+                    }
+                }
+            }
+            return pixels
+        }
+        for (mode, appearanceName, background) in [
+            ("light", NSAppearance.Name.aqua, NSColor.white),
+            ("dark", NSAppearance.Name.darkAqua, NSColor.black)
+        ] {
+            var ok = false
+            do {
+                let appearance = NSAppearance(named: appearanceName)
+                let spec = batteryGlyphSpec(parseDebugBattery("ac,100") ?? nil)
+                var masks: [String: Set<Int>] = [:]
+                var sizes: [NSSize] = []
+                var templateOK = true
+                for (state, memory, cpu) in [
+                    ("normal", false, false), ("memory", true, false),
+                    ("cpu", false, true), ("both", true, true)
+                ] {
+                    let icon = StatusRenderer.image(battery: spec, top: "13G", bottom: "41%", height: 24,
+                                                    net: ("↑2.1K", "↓205K"), topWarning: memory, bottomWarning: cpu,
+                                                    appearance: appearance)
+                    templateOK = templateOK && icon.isTemplate == (state == "normal")
+                    sizes.append(icon.size)
+                    let url = directory.appendingPathComponent("usage-warning-\(mode)-\(state).png")
+                    try StatusRenderer.renderPNG(icon, scale: 2, to: url, background: background)
+                    masks[state] = try redPixels(url)
+                }
+                let memory = masks["memory"] ?? [], cpu = masks["cpu"] ?? []
+                ok = appearance != nil && templateOK && sizes.dropFirst().allSatisfy { $0 == sizes[0] }
+                    && masks["normal"]?.isEmpty == true && !memory.isEmpty && !cpu.isEmpty
+                    && memory.isDisjoint(with: cpu) && masks["both"] == memory.union(cpu)
+            } catch {
+                NSLog("用量警戒渲染自检失败: \(error.localizedDescription)")
+            }
+            print("DEBUG_WARNING mode=\(mode) ok=\(ok)")
+        }
+    }
+
     // MARK: 菜单
 
     private func buildMenu() {
@@ -234,6 +289,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         contextMenu.items = [update, settings, .separator(), quit]
         model.onToggleLogin = { [weak self] on in self?.setLoginItem(on) }
         model.onCheckUpdates = { [weak self] in self?.checkForUpdates() }
+        model.onWarningThresholdChange = { [weak self] thresholds in
+            thresholds.save(to: .standard)
+            self?.redrawItem()
+        }
     }
 
     /// 右键「设置中心」：弹出面板并直接打开设置卡（点击态，鼠标移入再移出才收起）。
@@ -385,6 +444,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let p = prevTicks { cpuHistory.append(cpuSplit(previous: p, current: t)) }
         prevTicks = t
         let memUsedNow = Sampler.memoryUsedBytes()
+        menuCPU = cpu
+        menuMemoryUsed = memUsedNow
         memHistory.append(Double(percentOf(used: memUsedNow, total: Sampler.memoryTotalBytes)))
         if panel.isVisible { pushHistory() }
         let nc = Sampler.interfaceCounters(), now = ProcessInfo.processInfo.systemUptime
@@ -423,10 +484,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let netW = netSticky.update(actual: StatusRenderer.netActualWidth(up: netLines.0, down: netLines.1),
                                     minimum: StatusRenderer.netMinimumWidth, now: now)
         let spec = batteryGlyphSpec(battery)
-        let key = "\(String(describing: spec))|\(memTitle)|\(cpuTitle)|\(netLines)|\(memW)|\(netW)|\(h)"
+        let thresholds = model.warningThresholds
+        let memWarning = thresholds.memoryWarning(used: menuMemoryUsed, total: Sampler.memoryTotalBytes)
+        let cpuWarning = thresholds.cpuWarning(menuCPU)
+        let appearance = b.effectiveAppearance
+        let key = "\(String(describing: spec))|\(memTitle)|\(cpuTitle)|\(netLines)|\(memW)|\(netW)|\(h)|\(memWarning)|\(cpuWarning)|\(appearance.name.rawValue)"
         if key == lastDrawKey { return }   // 内容没变就不重绘，省 CPU
         lastDrawKey = key
-        let img = StatusRenderer.image(battery: spec, top: memTitle, bottom: cpuTitle, height: h, net: netLines, columns: (memW, netW))
+        let img = StatusRenderer.image(battery: spec, top: memTitle, bottom: cpuTitle, height: h,
+                                       net: netLines, columns: (memW, netW),
+                                       topWarning: memWarning, bottomWarning: cpuWarning, appearance: appearance)
         statsItem.length = img.size.width
         b.image = img
         b.title = ""

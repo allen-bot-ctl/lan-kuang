@@ -1,7 +1,7 @@
 import AppKit
 
 /// 单项菜单栏图像：电池图形（可无）· 间距 · 两行 10pt 窄体等宽数字文字（上内存、下 CPU）。
-/// 非低电量时整张为 template 图（跟随深浅菜单栏）；用电池且 ≤20% 时填充为 systemRed，其余用 labelColor。
+/// 无彩色提示时用 template 图跟随系统；需要红色时只给对应字行或低电量电池着色。
 enum StatusRenderer {
     typealias L = StatusItemLayout
 
@@ -75,7 +75,9 @@ enum StatusRenderer {
     static var netMinimumWidth: Double { netActualWidth(up: "↑99K", down: "↓99K") }
 
     static func image(battery: BatteryIconSpec?, top: String, bottom: String, height: CGFloat,
-                      net: (String, String)? = nil, columns: (mem: Double, net: Double)? = nil) -> NSImage {
+                      net: (String, String)? = nil, columns: (mem: Double, net: Double)? = nil,
+                      topWarning: Bool = false, bottomWarning: Bool = false,
+                      appearance: NSAppearance? = nil) -> NSImage {
         // columns 给定时整项宽度贴合这两列（v0.1.8 防抖后的宽度），否则按最长文案定宽（调试字体对比用）
         var w = width(hasBattery: battery != nil, hasNet: net != nil)
         if let c = columns {
@@ -85,9 +87,9 @@ enum StatusRenderer {
             w = CGFloat(total.rounded(.up))
         }
         let size = NSSize(width: w, height: height)
-        let red = battery?.isLowRed ?? false
-        let img = NSImage(size: size, flipped: false) { _ in
-            let ink: NSColor = red ? .labelColor : .black
+        let hasColor = (battery?.isLowRed ?? false) || topWarning || bottomWarning
+        let draw: () -> Void = {
+            let ink: NSColor = hasColor ? .labelColor : .black
             var x = CGFloat(L.sidePadding)
             if let spec = battery {
                 drawBattery(spec, origin: NSPoint(x: x, y: (height - CGFloat(L.glyphHeight)) / 2), ink: ink)
@@ -99,8 +101,9 @@ enum StatusRenderer {
             // draw(at:) 的点是文字框左下角；文字框高 ≈ ascender − descender，按 10pt 行高上下排
             let box = font.ascender - font.descender
             let adjust = (lh - box) / 2
-            (bottom as NSString).draw(at: NSPoint(x: x, y: blockBottom + adjust), withAttributes: attrs)
-            (top as NSString).draw(at: NSPoint(x: x, y: blockBottom + lh + adjust), withAttributes: attrs)
+            let warningAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.systemRed]
+            (bottom as NSString).draw(at: NSPoint(x: x, y: blockBottom + adjust), withAttributes: bottomWarning ? warningAttrs : attrs)
+            (top as NSString).draw(at: NSPoint(x: x, y: blockBottom + lh + adjust), withAttributes: topWarning ? warningAttrs : attrs)
             if let (up, down) = net {   // v0.1.7：网速列紧跟本次第二列实际最宽行的右缘 3pt，箭头 1pt 数字，一体左对齐；多余空白留在最右
                 let memW = max((top as NSString).size(withAttributes: attrs).width, (bottom as NSString).size(withAttributes: attrs).width)
                 let nx = x + memW + CGFloat(L.columnGap)
@@ -112,9 +115,12 @@ enum StatusRenderer {
                 }
                 lastGaps = (Double(L.gap), Double(L.columnGap), Double(arrowGap), Double(size.width - (nx + arrowWidth + arrowGap + max((String(up.dropFirst()) as NSString).size(withAttributes: attrs).width, (String(down.dropFirst()) as NSString).size(withAttributes: attrs).width))))
             }
+        }
+        let img = NSImage(size: size, flipped: false) { _ in
+            if let appearance { appearance.performAsCurrentDrawingAppearance(draw) } else { draw() }
             return true
         }
-        img.isTemplate = !red
+        img.isTemplate = !hasColor
         return img
     }
 
@@ -172,7 +178,7 @@ enum StatusRenderer {
     }
 
     /// 离屏按 scale 倍渲染菜单栏图像为 PNG（CI 用 2x 检查 ⚡ 是否清楚）。
-    static func renderPNG(_ img: NSImage, scale: CGFloat, to url: URL) throws {
+    static func renderPNG(_ img: NSImage, scale: CGFloat, to url: URL, background: NSColor = .white) throws {
         let pw = Int(img.size.width * scale), ph = Int(img.size.height * scale)
         guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pw, pixelsHigh: ph, bitsPerSample: 8,
                                          samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
@@ -180,7 +186,7 @@ enum StatusRenderer {
         rep.size = img.size
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-        NSColor.white.setFill()
+        background.setFill()
         NSRect(origin: .zero, size: img.size).fill()
         img.draw(in: NSRect(origin: .zero, size: img.size))
         NSGraphicsContext.restoreGraphicsState()

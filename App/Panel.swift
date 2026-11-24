@@ -19,6 +19,16 @@ final class PanelModel: ObservableObject {
     // v0.1.14 设置卡（隐藏卡，不进翻页和页码点）
     @Published var showSettings = false
     @Published var loginEnabled = false
+    @Published var warningThresholds = UsageWarningThresholds()
+    var onWarningThresholdChange: ((UsageWarningThresholds) -> Void)?
+    var cpuWarning: Bool { warningThresholds.cpuWarning(cpu) }
+    var memoryWarning: Bool { warningThresholds.memoryWarning(used: memUsed, total: memTotal) }
+
+    func setWarningThresholds(_ value: UsageWarningThresholds) {
+        guard warningThresholds != value else { return }
+        warningThresholds = value
+        onWarningThresholdChange?(value)
+    }
     var version = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "—"
     var onToggleLogin: ((Bool) -> Void)?
     var onCheckUpdates: (() -> Void)?
@@ -67,6 +77,7 @@ struct Row: View {
     let value: String
     let percent: Int?   // nil：不画环，改画静态图标（symbol），保证标签对齐
     var symbol: String? = nil
+    var warning = false
     var body: some View {
         HStack(spacing: 0) {
             if let percent { Ring(fraction: ringFraction(percent: percent)) }
@@ -82,6 +93,7 @@ struct Row: View {
             Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 13).monospacedDigit())
+                .foregroundColor(warning ? Color(nsColor: .systemRed) : .primary)
                 .lineLimit(1)
                 .fixedSize()
                 .reportFrame(id + ".value")
@@ -140,8 +152,8 @@ struct OverviewCard: View {
 
             Row(id: "mem", label: "内存",
                 value: formatUsageRow(used: model.memUsed, total: model.memTotal, unit: Units.gib),
-                percent: percentOf(used: model.memUsed, total: model.memTotal))
-            Row(id: "cpu", label: "CPU", value: formatCPUTitle(percent: model.cpu), percent: model.cpu)
+                percent: percentOf(used: model.memUsed, total: model.memTotal), warning: model.memoryWarning)
+            Row(id: "cpu", label: "CPU", value: formatCPUTitle(percent: model.cpu), percent: model.cpu, warning: model.cpuWarning)
             Row(id: "disk", label: "磁盘",
                 value: model.disk.map { formatUsageRow(used: $0.used, total: $0.total, unit: Units.gb) } ?? "—",
                 percent: model.disk?.percent ?? 0)
@@ -450,9 +462,22 @@ struct PanelView: View {
     }
 }
 
-/// v0.1.14 设置卡：左上「‹ 返回」，内容可垂直滚动；只放开机启动、检查更新、版本号。
+/// 设置卡：左上「‹ 返回」，内容可垂直滚动。
 struct SettingsCard: View {
     @ObservedObject var model: PanelModel
+
+    private func thresholdRow(_ label: String, value: Binding<Int>) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            Text("\(value.wrappedValue)%").monospacedDigit().foregroundColor(.secondary)
+            Stepper(label, value: value, in: UsageWarningThresholds.range, step: 1)
+                .labelsHidden().controlSize(.small)
+                .accessibilityValue(Text("\(value.wrappedValue)%"))
+        }
+        .frame(height: 30)
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
@@ -473,6 +498,14 @@ struct SettingsCard: View {
                             .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                     }
                     .frame(height: 30)
+                    Divider()
+                    thresholdRow("CPU 警戒阈值", value: Binding(get: { model.warningThresholds.cpu }, set: {
+                        model.setWarningThresholds(UsageWarningThresholds(cpu: $0, memory: model.warningThresholds.memory))
+                    }))
+                    Divider()
+                    thresholdRow("内存警戒阈值", value: Binding(get: { model.warningThresholds.memory }, set: {
+                        model.setWarningThresholds(UsageWarningThresholds(cpu: model.warningThresholds.cpu, memory: $0))
+                    }))
                     Divider()
                     HStack {
                         Text("版本")

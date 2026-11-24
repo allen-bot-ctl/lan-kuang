@@ -59,6 +59,10 @@ shoot() {  # $1=后缀  其余=启动参数
 }
 
 "$bin" --debug-render-icons="$PWD/shots" | tee /tmp/shots-icons.log; grep -E "DEBUG_(FONT|SPACING)" /tmp/shots-icons.log | sed "s/^/RELEASE: /"
+for mode in light dark; do
+  grep -qx "DEBUG_WARNING mode=$mode ok=true" /tmp/shots-icons.log || { echo "::error::用量警戒颜色自检失败：$mode"; exit 1; }
+  for state in normal memory cpu both; do test -s "shots/usage-warning-$mode-$state.png"; done
+done
 ls shots/icon2x-*.png | wc -l | awk '{exit !($1==5)}' || { echo "::error::2x 图标没有渲染满 5 张"; exit 1; }
 for f in shots/icon[12]x-*.png; do sips -g pixelWidth -g pixelHeight "$f" | tr '\n' ' '; echo; done
 shoot "" --debug-open-panel
