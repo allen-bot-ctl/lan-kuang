@@ -8,4 +8,4 @@
 ## 停用与恢复
 
 - 停用自动发布：先把请求文件恢复为 `{"disabled":true}` 并核对没有在途发布任务，再把默认分支的 `.github/workflows/release-request.yml` 中 publisher 的条件恢复为 `false && needs.validate.outputs.mode == 'publish'`。已运行或已发布的任务不因此撤回；另查相应运行状态。
-- 如果标签已建但未发出 Release：先确认标签仍对应批准 SHA，以及 GitHub Actions 没有相同标签的现有 Release 运行；如已在跑，等待并核验；如确无运行，按已有授权用既有 Release 手动触发，传原标签及批准的完整 SHA。不要删除、重写标签，也不要先建空 Release。
+- 如果标签已建但未发出 Release：先确认标签仍对应批准 SHA，以及 GitHub Actions 没有相同标签的现有 Release 运行；如已在跑，等待并核验；如确无运行且默认分支仍是当时批准的提交，按已有授权从默认分支手动触发现有 Release，传原标签及批准的完整 SHA。若默认分支已前进，保留标签并停止，另行审查恢复方案；不能省略 SHA 检查。不要删除、重写标签，也不要先建空 Release。
