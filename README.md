@@ -40,3 +40,10 @@ open build/LanKuang.app
 需要仓库 Secret `SPARKLE_ED_PRIVATE_KEY`（Sparkle EdDSA 私钥：32 字节种子的 base64），公钥写在 `project.env`。
 
 安装包为 ad-hoc 签名、未公证：首次打开在 Finder 中右键「打开」，或到「系统设置 → 隐私与安全性」选「仍要打开」。
+
+
+### 由已连接的 GitHub 发起云端发布
+
+`release-requests` 是只提交发布请求的公共分支。先确认目标是最新 `master`、同一完整 SHA 已通过本仓库的 CI，再只改该分支的 `.github/release-request.json`（不要把该分支合并回 `master`）。格式：`{"mode":"dry-run","tag":"v0.1.18","commit":"完整的 40 位提交 SHA"}`。只有仓库所有者的推送会被接受。`dry-run` 不创建标签、不调用发布工作流，到 **Release request** 查看核验结果。它不会验证正式签名或实际安装。
+
+在明确批准该版本发布后，另一次请求可用 `publish`：自动化将核验新版本和 CI、创建新标签并触发既有 **Release**；最终以 Release 任务、四个资产及生产更新源检查为准。若标签已创建但触发失败，先找对应标签的已有运行，确认没有后再手动运行 **Release**，不要移动、重建标签。不应把密钥写入此分支。
