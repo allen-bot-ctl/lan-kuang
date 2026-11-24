@@ -109,7 +109,7 @@ def process(event, api, *, publish_step=False):
         api("git/refs", {"ref": f"refs/tags/{tag}", "sha": candidate})
         try:
             dispatch = api("actions/workflows/release.yml/dispatches",
-                           {"ref": default, "inputs": {"tag": tag}})
+                           {"ref": tag, "inputs": {"tag": tag, "commit": candidate}})
         except ValueError:
             raise ValueError(f"{tag} created at {candidate}; dispatch response failed. Check existing Release runs before manual recovery; do not move the tag.") from None
         detail += f"; tag created, Release dispatch accepted; verify completion separately: {dispatch or 'no run ID returned'}"

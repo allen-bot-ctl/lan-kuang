@@ -10,12 +10,16 @@ on:
         description: "Existing tag to release (e.g. v0.1.0)"
         required: true
         type: string
+      commit:
+        description: "Exact approved commit SHA (optional for legacy manual release)"
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -25,11 +29,26 @@ jobs:
     timeout-minutes: 30
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
+      APPROVED_SHA: ${{ inputs.commit }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.commit || (inputs.tag && format('refs/tags/{0}', inputs.tag)) || github.ref }}
+
+      - name: Verify stable tag and approved commit before candidate scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if [[ -n "$APPROVED_SHA" ]]; then
+            [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+          fi
+          # Fetch qualified remote tag into the runner's temporary namespace, peeling annotated tags.
+          git fetch --no-tags origin "refs/tags/$TAG:refs/release-verify/$TAG"
+          test "$(git rev-parse "refs/release-verify/$TAG^{commit}")" = "$(git rev-parse HEAD)"
+          echo "RELEASE: checkout=$(git rev-parse HEAD) tag=$TAG"
 
       - name: Load project.env
         shell: bash
@@ -114,6 +133,14 @@ jobs:
           if-no-files-found: warn
           path: shots/
 
+      - name: Verify remote tag still points at tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fresh destination; a moved tag must fail the comparison, never be repaired.
+          git fetch --no-tags origin "refs/tags/$TAG:refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-sign"
+          test "$(git rev-parse "refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-sign^{commit}")" = "$(git rev-parse HEAD)"
+
       - name: Sign zip and generate appcast.xml
         env:
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -129,6 +156,14 @@ jobs:
           set -euo pipefail
           python3 scripts/notes.py md "$VERSION" > "$RUNNER_TEMP/release-notes.md"
           echo "path=$RUNNER_TEMP/release-notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Verify remote tag still points at tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fresh destination; a moved tag must fail the comparison, never be repaired.
+          git fetch --no-tags origin "refs/tags/$TAG:refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-publish"
+          test "$(git rev-parse "refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-publish^{commit}")" = "$(git rev-parse HEAD)"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
