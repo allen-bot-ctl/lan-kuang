@@ -64,7 +64,7 @@ class ContractTests(unittest.TestCase):
         rr.process(self.event, self.api, publish_step=True)
         self.assertEqual(self.writes, [
             ("git/refs", {"ref": f"refs/tags/{TAG}", "sha": MASTER_SHA}),
-            ("actions/workflows/release.yml/dispatches", {"ref": TAG, "inputs": {"tag": TAG, "commit": MASTER_SHA}}),
+            ("actions/workflows/release.yml/dispatches", {"ref": "master", "inputs": {"tag": TAG, "commit": MASTER_SHA}}),
         ])
 
     def test_fork_wrong_actor_and_wrong_workflow_fail_closed(self):

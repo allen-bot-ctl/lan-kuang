@@ -44,6 +44,8 @@ jobs:
           if [[ -n "$APPROVED_SHA" ]]; then
             [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
             test "$(git rev-parse HEAD)" = "$APPROVED_SHA"
+            test "$GITHUB_REF" = refs/heads/master
+            test "$GITHUB_WORKFLOW_SHA" = "$APPROVED_SHA"
           fi
           # Fetch qualified remote tag into the runner's temporary namespace, peeling annotated tags.
           git fetch --no-tags origin "refs/tags/$TAG:refs/release-verify/$TAG"
@@ -164,6 +166,27 @@ jobs:
           # Fresh destination; a moved tag must fail the comparison, never be repaired.
           git fetch --no-tags origin "refs/tags/$TAG:refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-publish"
           test "$(git rev-parse "refs/release-verify-${{ github.run_attempt }}/${{ github.job }}/$TAG-publish^{commit}")" = "$(git rev-parse HEAD)"
+
+      - name: Confirm requested version still advances the public feed
+        if: inputs.commit != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+          python3 - "$latest" "$TAG" <<'PYCODE'
+          import re
+          import sys
+
+          def version(tag):
+              if not re.fullmatch(r"v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)", tag):
+                  raise SystemExit("latest and requested tags must be stable versions")
+              return tuple(map(int, tag[1:].split(".")))
+
+          if version(sys.argv[2]) <= version(sys.argv[1]):
+              raise SystemExit("refusing to move the public feed backwards")
+          PYCODE
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
