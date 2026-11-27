@@ -548,7 +548,7 @@ final class HoverTracker: NSResponder {
     override func mouseExited(with event: NSEvent) { onExit?() }
 }
 
-/// 不抢焦点的悬浮面板（NSPanel + SwiftUI 内容）。
+/// 不激活应用的悬浮面板（NSPanel + SwiftUI 内容）；悬停展开不抢焦点。
 final class HoverPanel: NSPanel {
     /// 面板自身的鼠标进出，交给 HoverDebouncer。
     let tracker = HoverTracker()
@@ -631,7 +631,41 @@ final class HoverPanel: NSPanel {
         var t = Transaction(); t.disablesAnimations = true
         withTransaction(t) { model.page = pager.index; model.showSettings = false }
     }
-    override var canBecomeKey: Bool { false }
+    /// 0.1.18：可以成为键盘焦点（点图标打开、点面板或打开设置卡后），才能收到 Esc；悬停展开不调用 makeKey，不抢焦点。
+    /// 面板仍是 nonactivatingPanel，成为焦点也不激活本应用，前台应用不被切走。不加键盘监听。
+    override var canBecomeKey: Bool { true }
+
+    var onEscape: (PanelEscape.Action) -> Void = { _ in }
+
+    static func modifiers(_ flags: NSEvent.ModifierFlags) -> PanelEscape.Modifiers {
+        var m: PanelEscape.Modifiers = []
+        if flags.contains(.command) { m.insert(.command) }
+        if flags.contains(.option) { m.insert(.option) }
+        if flags.contains(.control) { m.insert(.control) }
+        if flags.contains(.shift) { m.insert(.shift) }
+        return m
+    }
+
+    /// 处理了返回 true；带修饰键的 Esc 或别的键不处理。
+    @discardableResult
+    func handleEscape(_ event: NSEvent?) -> Bool {
+        guard let e = event, e.type == .keyDown else { return false }
+        let action = PanelEscape.action(keyCode: e.keyCode, modifiers: Self.modifiers(e.modifierFlags),
+                                        showsSettings: model.showSettings)
+        guard action != .ignore else { return false }
+        onEscape(action)
+        return true
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if !handleEscape(NSApp.currentEvent) { super.cancelOperation(sender) }
+    }
+
+    /// SwiftUI 内容不一定把 Esc 翻译成 cancelOperation；面板自己收到的 Esc 在这里走同一条判断。
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == PanelEscape.escapeKeyCode, handleEscape(event) { return }
+        super.sendEvent(event)
+    }
 
     /// 可拉伸的圆角蒙版（capInsets 保证任意尺寸下圆角不变形）。
     static func roundedMask(radius: CGFloat) -> NSImage {

@@ -87,5 +87,17 @@ for st in charging,62 none; do
   grep "^DEBUG_SCROLL" "$log" || { cat "$log"; echo "::error::翻页测试没有输出"; exit 1; }
   grep -q "^DEBUG_SCROLL .* ok=true" "$log" || { echo "::error::翻页测试失败"; exit 1; }
 done
+# 0.1.18：面板内 Esc 分层退出（与栏量 0.3.15 一致）。应用打印 DEBUG_ESC_LIFECYCLE ok 才算过，不截图。
+esc_log=/tmp/esc-lifecycle.log
+"$bin" --debug-open-panel --debug-esc-lifecycle --debug-battery=charging,62 >"$esc_log" 2>&1 &
+esc_pid=$!
+for _ in $(seq 1 20); do
+  grep -q '^DEBUG_ESC_LIFECYCLE ' "$esc_log" && break
+  kill -0 "$esc_pid" 2>/dev/null || break
+  sleep 1
+done
+kill -TERM "$esc_pid" 2>/dev/null || true; sleep 1; kill -KILL "$esc_pid" 2>/dev/null || true
+grep "^DEBUG_ESC_LIFECYCLE" "$esc_log" | sed 's/^/RELEASE: /' || true
+grep -q "^DEBUG_ESC_LIFECYCLE ok" "$esc_log" || { cat "$esc_log"; echo "::error::Esc 生命周期测试失败"; exit 1; }
 grep -h "^DEBUG_" /tmp/shots-*.log | sed 's/^/RELEASE: /'
 ls -l shots

@@ -155,6 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         hover.onExit = { [weak self] in self?.hoverEvent(.itemExit) }
         panel.tracker.onEnter = { [weak self] in self?.hoverEvent(.panelEnter) }
         panel.tracker.onExit = { [weak self] in self?.hoverEvent(.panelExit) }
+        panel.onEscape = { [weak self] action in self?.panelEscape(action) }
 
         model.warningThresholds = UsageWarningThresholds.load(from: .standard)
         buildMenu()
@@ -171,8 +172,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let p = self.debugPage { self.panel.resetPage(to: p) }
                 if CommandLine.arguments.contains("--debug-settings") { self.model.showSettings = true }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.printDebugGeometry() }
+                if CommandLine.arguments.contains("--debug-esc-lifecycle") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runEscLifecycle() }
+                }
                 if CommandLine.arguments.contains("--debug-scroll-test") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runScrollTest() }
+                }
+            }
+        }
+    }
+
+    /// CI（0.1.18）：Esc 用合成按键送进面板，走和真实按键一样的 sendEvent / cancelOperation。
+    /// 依次：悬停展开不抢焦点、点图标成为焦点、进设置、⌘Esc 不处理、Esc 回总览、Esc 收起、再点图标停在总览。
+    private func runEscLifecycle() {
+        let p = panel
+        func key(_ flags: NSEvent.ModifierFlags = []) {
+            if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags,
+                                        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: p.windowNumber,
+                                        context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                                        isARepeat: false, keyCode: PanelEscape.escapeKeyCode) {
+                p.sendEvent(e)
+            }
+        }
+        func after(_ body: @escaping () -> Void) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: body) }
+        func clickIcon() { debouncer.handle(.click); applyHoverState(); if p.isVisible { p.makeKey() } }
+        // 起点：--debug-open-panel 已按点击打开，先收起再模拟悬停展开。
+        debouncer.forceHide(); applyHoverState()
+        debouncer.handle(.itemEnter); applyHoverState()
+        after {
+            let previewNoKey = p.isVisible && !p.isKeyWindow
+            self.debouncer.handle(.itemExit); self.debouncer.forceHide(); self.applyHoverState()
+            clickIcon()
+            after {
+                let clicked = p.isVisible && !self.model.showSettings
+                let clickedKey = p.isKeyWindow
+                self.model.showSettings = true
+                after {
+                    let settings = p.isVisible && self.model.showSettings
+                    key(.command)
+                    let modifierIgnored = p.isVisible && self.model.showSettings
+                    key()
+                    after {
+                        let backToMain = p.isVisible && !self.model.showSettings
+                        key()
+                        after {
+                            let closed = !p.isVisible && !self.debouncer.isShown
+                            clickIcon()
+                            after {
+                                let reopenedMain = p.isVisible && !self.model.showSettings
+                                let reopenedKey = p.isKeyWindow
+                                let ok = previewNoKey && clicked && clickedKey && settings && modifierIgnored
+                                    && backToMain && closed && reopenedMain && reopenedKey
+                                print("DEBUG_ESC_LIFECYCLE \(ok ? "ok" : "failed") previewNoKey=\(previewNoKey) clicked=\(clicked) clickedKey=\(clickedKey) settings=\(settings) modifierIgnored=\(modifierIgnored) backToMain=\(backToMain) closed=\(closed) reopenedMain=\(reopenedMain) reopenedKey=\(reopenedKey)")
+                                fflush(stdout)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -302,6 +357,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         debouncer.handle(.click)
         applyHoverState()
         model.showSettings = true
+        if panel.isVisible { panel.makeKey() }
+    }
+
+    /// 0.1.18：面板里的 Esc，设置卡回总览，总览收起面板。
+    private func panelEscape(_ action: PanelEscape.Action) {
+        switch action {
+        case .returnToMain: model.showSettings = false
+        case .closePanel: debouncer.forceHide(); applyHoverState()
+        case .ignore: break
+        }
     }
 
     @objc private func statusClicked(_ sender: NSStatusBarButton) {
@@ -316,6 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             debouncer.handle(.click)
             applyHoverState()
+            if panel.isVisible { panel.makeKey() }   // 点图标打开：成为键盘焦点，可直接按 Esc
         }
     }
 
