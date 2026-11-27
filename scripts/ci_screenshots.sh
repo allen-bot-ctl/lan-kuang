@@ -78,7 +78,15 @@ for ap in dark light; do
     shoot "-card$pg-$ap" --debug-open-panel --debug-page=$pg --debug-appearance=$ap --debug-battery=charging,62
   done
 done
-shoot "-settings" --debug-open-panel --debug-settings --debug-battery=charging,62
+# 0.1.19：设置卡按内容变高（深浅各一张，要看到「检查更新」整行），再截一张返回总览后的面板（高度同 0.1.18）
+for ap in dark light; do
+  shoot "-settings-$ap" --debug-open-panel --debug-settings --debug-appearance=$ap --debug-battery=charging,62
+  grep "^DEBUG_PANEL_HEIGHT" "/tmp/shots--settings-$ap.log" | sed 's/^/RELEASE: /'
+  grep -q "^DEBUG_PANEL_HEIGHT settings=true .* ok=true" "/tmp/shots--settings-$ap.log" || { echo "::error::设置卡高度自检失败：$ap"; exit 1; }
+done
+shoot "-settings-return" --debug-open-panel --debug-settings --debug-settings-return --debug-battery=charging,62
+grep "^DEBUG_PANEL_HEIGHT" /tmp/shots--settings-return.log | sed 's/^/RELEASE: /'
+grep -q "^DEBUG_PANEL_HEIGHT settings=false .* ok=true" /tmp/shots--settings-return.log || { echo "::error::返回总览后面板高度不对"; exit 1; }
 # v0.1.12 M1：合成滚动事件翻页（有电池 6 张、没电池 5 张）
 for st in charging,62 none; do
   log="/tmp/scroll-${st%%,*}.log"

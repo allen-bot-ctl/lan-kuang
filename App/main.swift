@@ -171,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.applyHoverState()
                 if let p = self.debugPage { self.panel.resetPage(to: p) }
                 if CommandLine.arguments.contains("--debug-settings") { self.model.showSettings = true }
+                if CommandLine.arguments.contains("--debug-settings-return") {   // 0.1.19：进设置再返回，截回总览后的面板
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.model.showSettings = false }
+                }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.printDebugGeometry() }
                 if CommandLine.arguments.contains("--debug-esc-lifecycle") {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.runEscLifecycle() }
@@ -492,6 +495,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let vmax = ids.map { Double(f[$0 + ".value"]?.maxX ?? -1) }
         let ok = layoutAligned(labelMinX: lmin, labelMaxX: lmax, valueMinX: vmin, valueMaxX: vmax)
         print("DEBUG_LAYOUT labelMinX=\(lmin) valueMaxX=\(vmax) ok=\(ok)")
+        // 0.1.19：面板高度自检（设置卡 ≥ 内容高度；回总览等于 0.1.18 高度；顶边不动）
+        let ph = Double(panel.frame.height), expected = model.panelHeight(settings: model.showSettings)
+        let overviewPanel = model.overviewCardHeight + CardLayout.dotsHeight
+        let topFixed = abs(panel.frame.maxY - (panel.anchorTop ?? panel.frame.maxY)) < 1
+        let heightOK = abs(ph - expected) < 1 && topFixed
+            && (model.showSettings ? model.settingsCardHeight >= SettingsLayout.contentHeight : abs(ph - overviewPanel) < 1)
+        print("DEBUG_PANEL_HEIGHT settings=\(model.showSettings) panel=\(ph) expected=\(expected) overview=\(overviewPanel) content=\(SettingsLayout.contentHeight) card=\(model.settingsCardHeight) topFixed=\(topFixed) ok=\(heightOK)")
         fflush(stdout)
     }
 

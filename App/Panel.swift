@@ -38,6 +38,13 @@ final class PanelModel: ObservableObject {
     @Published var memCached: UInt64 = 0
     @Published var swapUsed: UInt64 = 0
     var cards: [String] { cardIDs(hasBattery: battery != nil) }
+    // 0.1.19：设置卡按内容变高；available 由面板打开时按屏幕算（卡片可用高度），nil = 不限。
+    var settingsAvailableHeight: Double?
+    var overviewCardHeight: Double { CardLayout.overviewHeight(rows: cards.count - 1) }
+    var settingsCardHeight: Double { SettingsLayout.cardHeight(overview: overviewCardHeight, available: settingsAvailableHeight) }
+    func panelHeight(settings: Bool) -> Double {
+        (settings ? settingsCardHeight : overviewCardHeight) + CardLayout.dotsHeight
+    }
 }
 
 struct Ring: View {
@@ -430,9 +437,11 @@ struct PanelView: View {
         let cards = model.cards
         let h = CardLayout.overviewHeight(rows: cards.count - 1)
         let w = PanelLayout.width
+        let sh = model.settingsCardHeight
         VStack(spacing: 0) {
             if model.showSettings {
-                SettingsCard(model: model).frame(width: w, height: h, alignment: .top)
+                SettingsCard(model: model, scrolls: SettingsLayout.needsScroll(cardHeight: sh))
+                    .frame(width: w, height: sh, alignment: .top)
                 PageDots(count: cards.count, index: model.page).hidden()   // 设置卡不算页，只占位保持面板尺寸
             } else {
                 HStack(spacing: 0) {
@@ -462,9 +471,49 @@ struct PanelView: View {
     }
 }
 
-/// 设置卡：左上「‹ 返回」，内容可垂直滚动。
+/// 设置卡：左上「‹ 返回」；0.1.19 起按内容变高一次全显示，屏幕放不下才滚动。
 struct SettingsCard: View {
     @ObservedObject var model: PanelModel
+    var scrolls = false
+    @State private var contentBottom: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+    private var moreBelow: Bool { contentBottom > viewport + 1 }
+
+    private var rows: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("开机自启动")
+                Spacer()
+                Toggle("", isOn: Binding(get: { model.loginEnabled },
+                                         set: { model.loginEnabled = $0; model.onToggleLogin?($0) }))
+                    .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+            }
+            .frame(height: 30)
+            Divider()
+            thresholdRow("CPU 警戒阈值", value: Binding(get: { model.warningThresholds.cpu }, set: {
+                model.setWarningThresholds(UsageWarningThresholds(cpu: $0, memory: model.warningThresholds.memory))
+            }))
+            Divider()
+            thresholdRow("内存警戒阈值", value: Binding(get: { model.warningThresholds.memory }, set: {
+                model.setWarningThresholds(UsageWarningThresholds(cpu: model.warningThresholds.cpu, memory: $0))
+            }))
+            Divider()
+            HStack {
+                Text("版本")
+                Spacer()
+                Text(model.version).monospacedDigit().foregroundColor(.secondary)
+            }
+            .frame(height: 30)
+            Divider()
+            HStack {
+                Text("更新")
+                Spacer()
+                CapsuleButton(action: { model.onCheckUpdates?() }) { Text("检查更新") }
+            }
+            .frame(height: 30)
+        }
+        .font(.system(size: 13))
+    }
 
     private func thresholdRow(_ label: String, value: Binding<Int>) -> some View {
         HStack {
@@ -488,45 +537,45 @@ struct SettingsCard: View {
                 }
             }
             .frame(height: CardLayout.headerHeight)
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 0) {
-                    HStack {
-                        Text("开机自启动")
-                        Spacer()
-                        Toggle("", isOn: Binding(get: { model.loginEnabled },
-                                                 set: { model.loginEnabled = $0; model.onToggleLogin?($0) }))
-                            .toggleStyle(.switch).controlSize(.mini).labelsHidden()
-                    }
-                    .frame(height: 30)
-                    Divider()
-                    thresholdRow("CPU 警戒阈值", value: Binding(get: { model.warningThresholds.cpu }, set: {
-                        model.setWarningThresholds(UsageWarningThresholds(cpu: $0, memory: model.warningThresholds.memory))
-                    }))
-                    Divider()
-                    thresholdRow("内存警戒阈值", value: Binding(get: { model.warningThresholds.memory }, set: {
-                        model.setWarningThresholds(UsageWarningThresholds(cpu: model.warningThresholds.cpu, memory: $0))
-                    }))
-                    Divider()
-                    HStack {
-                        Text("版本")
-                        Spacer()
-                        Text(model.version).monospacedDigit().foregroundColor(.secondary)
-                    }
-                    .frame(height: 30)
-                    Divider()
-                    HStack {
-                        Text("更新")
-                        Spacer()
-                        CapsuleButton(action: { model.onCheckUpdates?() }) { Text("检查更新") }
-                    }
-                    .frame(height: 30)
+            if scrolls {
+                // 兜底：屏幕放不下才滚动；没滚到底时底部渐隐 + 「⌄」，滚到底消失。
+                ScrollView(.vertical, showsIndicators: true) {
+                    rows.background(GeometryReader { g in
+                        Color.clear.preference(key: SettingsBottomKey.self, value: g.frame(in: .named("settingsScroll")).maxY)
+                    })
                 }
-                .font(.system(size: 13))
+                .coordinateSpace(name: "settingsScroll")
+                .background(GeometryReader { g in Color.clear.preference(key: SettingsViewportKey.self, value: g.size.height) })
+                .onPreferenceChange(SettingsBottomKey.self) { contentBottom = $0 }
+                .onPreferenceChange(SettingsViewportKey.self) { viewport = $0 }
+                .mask(VStack(spacing: 0) {
+                    Rectangle().fill(Color.black)
+                    LinearGradient(colors: [.black, moreBelow ? .clear : .black], startPoint: .top, endPoint: .bottom)
+                        .frame(height: SettingsLayout.fadeHeight)
+                })
+                .overlay(Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .opacity(moreBelow ? 1 : 0)
+                            .allowsHitTesting(false),
+                         alignment: .bottom)
+            } else {
+                rows   // 0.1.19：放得下就一次全显示，不用滚动
             }
         }
         .padding(.horizontal, PanelLayout.horizontalPadding)
         .padding(.vertical, 10)
     }
+}
+
+struct SettingsBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+struct SettingsViewportKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 /// 吃掉面板上的滚动事件（不传给下面），交给翻页逻辑。
@@ -601,6 +650,9 @@ final class HoverPanel: NSPanel {
                 var t = Transaction(); t.disablesAnimations = true
                 withTransaction(t) { self.model.page = 0 }
             }
+            // 0.1.19：设置卡按内容变高、回总览恢复原高；顶边不动只向下长。SwiftUI 刷新后再对齐一次。
+            self.fitHeight(settings: open)
+            DispatchQueue.main.async { [weak self] in self?.fitHeight(settings: open) }
         }
     }
 
@@ -680,16 +732,32 @@ final class HoverPanel: NSPanel {
         return img
     }
 
+    /// 面板顶边（屏幕坐标），打开时记下；改高度时顶边不动。
+    private(set) var anchorTop: CGFloat?
+
+    /// 0.1.19：按当前卡片设面板高度，顶边固定、只向下长。
+    func fitHeight(settings: Bool) {
+        let h = CGFloat(model.panelHeight(settings: settings))
+        let top = anchorTop ?? frame.maxY
+        setFrame(NSRect(x: frame.minX, y: top - h, width: frame.width, height: h), display: true)
+        invalidateShadow()
+    }
+
     /// 放在状态栏按钮正下方，水平居中并夹在屏幕可见区域内。
     func show(below button: NSStatusBarButton) {
         guard let bw = button.window else { return }
-        if let host = contentView?.subviews.first { setContentSize(host.fittingSize) }
         let b = bw.convertToScreen(button.convert(button.bounds, to: nil))
+        let top = b.minY - 4
+        let vf = (bw.screen ?? NSScreen.main)?.visibleFrame
+        if let vf { model.settingsAvailableHeight = Double(top - vf.minY - 4) - CardLayout.dotsHeight }
+        let width = contentView?.subviews.first?.fittingSize.width ?? CGFloat(PanelLayout.width)
+        setContentSize(NSSize(width: width, height: CGFloat(model.panelHeight(settings: model.showSettings))))
         var x = b.midX - frame.width / 2
-        let y = b.minY - frame.height - 4
-        if let vf = (bw.screen ?? NSScreen.main)?.visibleFrame {
+        let y = top - frame.height
+        if let vf {
             x = min(max(x, vf.minX + 4), vf.maxX - frame.width - 4)
         }
+        anchorTop = top
         setFrameOrigin(NSPoint(x: x, y: y))
         orderFrontRegardless()
         invalidateShadow()   // 阴影按圆角遮罩重算

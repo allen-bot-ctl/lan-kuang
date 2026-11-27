@@ -12,10 +12,36 @@ public enum CardLayout {
     public static let headerHeight: Double = 22      // 「设置」胶囊 22pt 高
     public static let headerGap: Double = 6
     public static let overviewBottomGap: Double = 6  // 最后一行到页码点
-    /// 总览高度：标题行 + 间距 + 行数 × 22 + 行间距 4 + 上下各 10。所有卡片（含设置卡）同高。
+    /// 总览高度：标题行 + 间距 + 行数 × 22 + 行间距 4 + 上下各 10。所有翻页卡片同高（0.1.19 起设置卡按内容变高，见 SettingsLayout）。
     public static func overviewHeight(rows: Int) -> Double {
         Double(rows) * 22 + Double(max(0, rows - 1)) * 4 + 20 + 30   // 契约 C1：0.1.13 高度 + 30pt，内容顶对齐
     }
+    /// 卡片下方页码点区域（14 + 底部 6）。面板高度 = 卡片高度 + 这一段。
+    public static var dotsHeight: Double { dotAreaHeight + dotBottomPadding }
+}
+
+/// 0.1.19：设置卡高度由内容决定，不再和总览同高；屏幕放不下时才兜底滚动。
+public enum SettingsLayout {
+    public static let rows = 5                 // 开机自启动、CPU 阈值、内存阈值、版本、更新
+    public static let rowHeight: Double = 30
+    public static let dividerHeight: Double = 1
+    public static let headerSpacing: Double = 6
+    public static let verticalPadding: Double = 20   // 上下各 10
+    public static let slack: Double = 2              // 分隔线取整余量，防止最后一行被切
+    public static let fadeHeight: Double = 16
+    /// 标题 22 + 间距 6 + 5 行 × 30 + 4 条分隔线 + 上下 20 + 余量 2 = 204。
+    public static var contentHeight: Double {
+        CardLayout.headerHeight + headerSpacing + Double(rows) * rowHeight
+            + Double(rows - 1) * dividerHeight + verticalPadding + slack
+    }
+    /// 设置卡高度：放得下就等于内容高度（不比总览矮）；available（屏幕可用的卡片高度）不够时夹到 available。
+    public static func cardHeight(overview: Double, available: Double?) -> Double {
+        let want = max(overview, contentHeight)
+        guard let a = available else { return want }
+        return min(want, max(a, overview))
+    }
+    /// 卡片比内容矮才需要兜底滚动（加渐隐和「⌄」）。
+    public static func needsScroll(cardHeight: Double) -> Bool { cardHeight + 0.5 < contentHeight }
 }
 
 /// 卡片顺序：总览永远第一，没有电池不出电池卡。
